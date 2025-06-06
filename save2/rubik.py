@@ -89,16 +89,6 @@ class Cube:
 class Rubik:
     def __init__(self):
         self.cubes = []
-        # Fix: Make color_lookup a class attribute
-        self.color_lookup = {
-            'red': pr.RED,
-            'green': pr.GREEN,
-            'blue': pr.BLUE,
-            'white': pr.RAYWHITE,
-            'yellow': pr.YELLOW,
-            'orange': pr.ORANGE,
-            'unknown': pr.GRAY
-        }
         self.is_rotating = False
         self.rotation_angle = 0
         self.rotating_axis = None
@@ -106,63 +96,6 @@ class Rubik:
         self.segment = None
         self.target_rotation = 0
         self.generate_rubik(2)
-
-    def update_colors(self, cube_state):
-        """Apply captured face colors to the cube's stickers"""
-        print(f"Updating colors with cube state: {cube_state}")
-        
-        face_map = {
-            'F': (2, 2),  # Front face - Z axis, positive level
-            'B': (2, 0),  # Back face - Z axis, negative level
-            'R': (0, 2),  # Right face - X axis, positive level
-            'L': (0, 0),  # Left face - X axis, negative level
-            'U': (1, 2),  # Up face - Y axis, positive level
-            'D': (1, 0)   # Down face - Y axis, negative level
-        }
-
-        for face, (axis, level) in face_map.items():
-            facelets = cube_state.get(face)
-            if not facelets:
-                print(f"No facelets found for face {face}")
-                continue
-
-            print(f"Processing face {face} with colors: {facelets}")
-            segment = self.get_face(np.eye(3)[axis], level)
-            print(f"Face {face} segment indices: {segment}")
-
-            for row in range(3):
-                for col in range(3):
-                    i = row * 3 + col
-                    if i >= len(segment): 
-                        continue
-                    
-                    cube_index = segment[i]
-                    if cube_index >= len(self.cubes):
-                        continue
-                        
-                    cube = self.cubes[cube_index]
-                    sticker_index = self.get_sticker_index(axis, level)
-                    color_name = facelets[row][col]
-                    color = self.color_lookup.get(color_name, pr.GRAY)
-                    
-                    print(f"Setting cube {cube_index}, sticker {sticker_index} to {color_name} ({color})")
-                    
-                    # Update the sticker color
-                    cube[sticker_index].face_color = color
-                    cube[sticker_index].model.materials[0].maps[pr.MATERIAL_MAP_DIFFUSE].color = color
-                    cube[sticker_index].update_transform()
-
-    def get_sticker_index(self, axis, level):
-        """Get the index of the sticker on a cube piece"""
-        # Cube structure: [center, front, back, right, left, top, bottom]
-        # Indices:         [0,      1,     2,    3,     4,    5,   6]
-        if axis == 0:  # X-axis
-            return 3 if level == 2 else 4  # Right (3) or Left (4)
-        elif axis == 1:  # Y-axis
-            return 5 if level == 2 else 6  # Top (5) or Bottom (6)
-        elif axis == 2:  # Z-axis
-            return 1 if level == 2 else 2  # Front (1) or Back (2)
-        return 0
 
     def generate_rubik(self, size):
         colors = [pr.RED, pr.ORANGE, pr.WHITE, pr.YELLOW, pr.GREEN, pr.BLUE]
@@ -282,3 +215,4 @@ class Rubik:
         angle = np.pi/2 if clockwise else -np.pi/2
         rotation_queue.append((angle, axis, level))
         return rotation_queue
+    
