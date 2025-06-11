@@ -3,6 +3,7 @@ import raylibpy as pr  # This helps us draw 3D graphics on the screen
 import numpy as np     # This helps us do math with numbers and arrays
 import random          # This gives us random numbers
 
+
 # This is like a blueprint for making one small cube piece
 class Cube:
     def __init__(self, size, center, face_color):
@@ -21,6 +22,29 @@ class Cube:
         # Turn that shape into something we can see on screen
         self.create_model()
     
+
+    def convert_to_kociemba_string(self):
+        """Convert the captured cube state into a Kociemba-compatible string"""
+        if not self.cube_state:
+            return None
+
+        face_order = ['U', 'R', 'F', 'D', 'L', 'B']  # Kociemba expects this order
+        color_face_map = {}
+
+        # Step 1: Identify center color of each face
+        for face in face_order:
+            center_color = self.cube_state[face][1][1]
+            color_face_map[center_color] = face
+
+        # Step 2: Build the full string
+        kociemba_str = ''
+        for face in face_order:
+            for row in self.cube_state[face]:
+                for color in row:
+                    kociemba_str += color_face_map.get(color, 'X')  # fallback to 'X' if unknown
+        return kociemba_str
+
+
     def gen_mesh(self, scale):
         # Check if we got different sizes for width, height, depth
         if isinstance(scale, tuple):
@@ -126,17 +150,18 @@ class Rubik:
     def __init__(self):
         # Start with an empty list to hold all our small cubes
         self.cubes = []
-        # Fix: Make color_lookup a class attribute
         # Create a dictionary that converts color names to actual colors
-        self.color_lookup = {
-            'red': pr.RED,
-            'green': pr.GREEN,
-            'blue': pr.BLUE,
+        self.colors = {
             'white': pr.RAYWHITE,
             'yellow': pr.YELLOW,
+            'green': pr.LIME,
+            'blue': pr.BLUE,
             'orange': pr.ORANGE,
-            'unknown': pr.GRAY
+            'red': pr.RED,
         }
+        # FIX: Add color_lookup as an alias to colors for compatibility
+        self.color_lookup = self.colors
+
         # Keep track of whether we're currently rotating a face
         self.is_rotating = False
         # Keep track of how much we've rotated so far
@@ -154,10 +179,8 @@ class Rubik:
 
     def update_colors(self, cube_state):
         """Apply captured face colors to the cube's stickers"""
-        # Print what colors we're trying to apply (for debugging)
         print(f"Updating colors with cube state: {cube_state}")
         
-        # Map face letters to axis and level numbers
         face_map = {
             'F': (2, 2),  # Front face - Z axis, positive level
             'B': (2, 0),  # Back face - Z axis, negative level
@@ -167,56 +190,53 @@ class Rubik:
             'D': (1, 0)   # Down face - Y axis, negative level
         }
 
-        # Go through each face of the cube
         for face, (axis, level) in face_map.items():
-            # Get the colors for this face
             facelets = cube_state.get(face)
-            # If we don't have colors for this face, skip it
             if not facelets:
                 print(f"No facelets found for face {face}")
                 continue
 
-            # Print what we're working on (for debugging)
             print(f"Processing face {face} with colors: {facelets}")
-            # Get all the cube pieces that belong to this face
             unsorted_seg = self.get_face(np.eye(3)[axis], level)
-            # Sort them in the right order (top-left to bottom-right)
             segment = self.sort_face(unsorted_seg, axis, level)
 
-            # Go through each sticker position on this face (3x3 grid)
             for row in range(3):
                 for col in range(3):
-                    # Calculate which sticker we're on (0-8)
                     i = row * 3 + col
-                    # Make sure we don't go past the end of our list
                     if i >= len(segment): 
                         continue
-                    
-                    # Get which cube piece this sticker belongs to
+
                     cube_index = segment[i]
-                    # Make sure the cube exists
                     if cube_index >= len(self.cubes):
                         continue
-                        
-                    # Get the actual cube piece
-                    cube = self.cubes[cube_index]
-                    # Figure out which sticker on this cube piece we need to color
+
+                    # FIX: Get the correct sticker part based on the face
                     sticker_index = self.get_sticker_index(axis, level)
-                    # Get the color name from our grid
-                    color_name = facelets[row][col]
-                    # Convert the color name to an actual color
-                    color = self.color_lookup.get(color_name, pr.GRAY)
-                    
-                    # Print what we're doing (for debugging)
-                    print(f"Setting cube {cube_index}, sticker {sticker_index} to {color_name} ({color})")
-                    
-                    # Update the sticker color
-                    # Change the color in our data
-                    cube[sticker_index].face_color = color
-                    # Change the color on the screen
-                    cube[sticker_index].model.materials[0].maps[pr.MATERIAL_MAP_DIFFUSE].color = color
-                    # Update the position (in case it moved)
-                    cube[sticker_index].update_transform()
+                    if sticker_index < len(self.cubes[cube_index]):
+                        cubelet = self.cubes[cube_index][sticker_index]  # Get the specific sticker
+                        
+                        # Correct orientation for each face
+                        if face == 'F':
+                            color_name = facelets[2 - row][col]           # Flip vertically
+                        elif face == 'B':
+                            color_name = facelets[2 - row][col]       # Flip vertically + horizontally
+                        elif face == 'L':
+                            color_name = facelets[2 - row][2 - col]       # Flip vertically + horizontally
+                        elif face == 'R':
+                            color_name = facelets[2 - row][col]           # Flip vertically
+                        elif face == 'U':
+                            color_name = facelets[row][2 - col]           # Mirror horizontally only
+                        elif face == 'D':
+                            color_name = facelets[2 - row][col]           # Flip vertically
+
+
+                        color = self.color_lookup.get(color_name, pr.GRAY)
+
+                        print(f"Setting cube {cube_index} sticker {sticker_index} to {color_name} ({color})")
+
+                        # Update the color of this sticker
+                        cubelet.face_color = color
+                        cubelet.model.materials[0].maps[pr.MATERIAL_MAP_DIFFUSE].color = color
 
     def get_sticker_index(self, axis, level):
         """Get the index of the sticker on a cube piece"""
@@ -394,14 +414,14 @@ class Rubik:
 
             # Choose how to sort based on which face we're looking at
             if axis == 2:  # Front or Back face
-                row = -cy  # Use negative Y for row (top to bottom)
-                col = -cx if level == 2 else cx  # Mirror X for Front face
+                row = cy   # Positive Y for row (bottom to top, then flip)
+                col = cx if level == 2 else -cx  # Normal X for Front, flipped for Back
             elif axis == 0:  # Right or Left face
-                row = -cy  # Use negative Y for row (top to bottom)
-                col = cz if level == 2 else -cz  # Mirror Z for Right face
-            elif axis == 1:  # Up or Down face
-                row = -cz if level == 2 else cz  # Use Z for row (front to back)
-                col = -cx  # Mirror X for top-down view
+                row = cy   # Positive Y for row
+                col = -cz if level == 2 else cz  # Flipped Z for Right, normal for Left
+            elif axis == 1:  # Up or Down face  
+                row = cz if level == 2 else -cz  # Normal Z for Up, flipped for Down
+                col = cx   # Normal X
             # Return the sorting key (row first, then column)
             return (row, col)
 

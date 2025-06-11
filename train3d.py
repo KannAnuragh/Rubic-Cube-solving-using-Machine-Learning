@@ -3,7 +3,7 @@ import raylibpy as pr  # This helps us draw 3D graphics and windows
 import numpy as np     # This helps us do math with numbers and arrays
 import configs         # This has our settings like window size and colors
 from rubik import Rubik  # This is our 3D Rubik's cube
-from cv_solver import RubikCVSolver, integrate_cv_solver_with_rubik  # This helps solve the cube using a camera
+from cv_solver import RubikCVSolver, integrate_cv_solver_with_rubik, map_move_to_game_input  # This helps solve the cube using a camera
 
 # Create a window where we can see our cube (like opening a video game)
 pr.init_window(configs.window_w, configs.window_h, "Rubik's Cube CV Solver")
@@ -59,6 +59,9 @@ while not pr.window_should_close():  # Keep going until user clicks X
     # Manual controls - these let you turn the cube by hand using keyboard
     elif pr.is_key_pressed(pr.KEY_F):  # F key = Front face
         axis = np.array([0, 0, 1])  # Direction to rotate (front-back)
+        rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
+    elif pr.is_key_pressed(pr.KEY_R):  # F key = Front face
+        axis = np.array([1, 0, 0]) 
         rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
 
     elif pr.is_key_pressed(pr.KEY_U):  # U key = Up face
@@ -152,7 +155,11 @@ while not pr.window_should_close():  # Keep going until user clicks X
     if auto_solve and solution_ready and not rubik_cube.is_rotating:  # If auto-solve is on and cube isn't moving
         move_data = integrate_cv_solver_with_rubik(rubik_cube, cv_solver)  # Get next move
         if move_data:  # If we got a valid move
-            axis, level, clockwise = move_data  # Break down the move details
+            move_steps = map_move_to_game_input(move_data)
+            for axis, level, clockwise in move_steps:
+                rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)
+
+            # Break down the move details
             rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)  # Add move to queue
             
             if not cv_solver.next_step():  # Try to go to next step
@@ -167,6 +174,34 @@ while not pr.window_should_close():  # Keep going until user clicks X
     # Handle rotation animation (make the cube actually turn smoothly)
     rotation_queue, _ = rubik_cube.handle_rotation(rotation_queue)
     
+    import numpy as np  # ensure this is at the top of your file if not already
+
+    def map_move_to_game_input(move):
+        clockwise = True
+        times = 1
+
+        if move.endswith("'"):
+            clockwise = False
+            move = move[0]
+        elif move.endswith("2"):
+            times = 2
+            move = move[0]
+
+        axis_map = {
+            'U': (np.array([0, 1, 0]), 2),
+            'D': (np.array([0, 1, 0]), 0),
+            'R': (np.array([1, 0, 0]), 2),
+            'L': (np.array([1, 0, 0]), 0),
+            'F': (np.array([0, 0, 1]), 2),
+            'B': (np.array([0, 0, 1]), 0)
+        }
+
+        axis, level = axis_map.get(move, (None, None))
+        if axis is None:
+            return []
+        return [(axis, level, clockwise)] * times
+
+
     # Update camera position (so we can look around the cube)
     pr.update_camera(configs.camera, pr.CAMERA_THIRD_PERSON)
 

@@ -1,6 +1,8 @@
 # Import the libraries we need - like getting tools from a toolbox
 import cv2        # This helps us work with cameras and see colors
 import numpy as np # This helps us do math with numbers and arrays
+from ida_solver import ida_star
+
 
 # This is like a smart helper that can see your Rubik's cube and help solve it
 class RubikCVSolver:
@@ -31,7 +33,7 @@ class RubikCVSolver:
         self.face_names = ['F', 'B', 'R', 'L', 'U', 'D']
 
     def initialize_camera(self, camera_index=0):
-        # Try to connect to the camera (like turning on a webcam)
+        """Try to connect to the camera (like turning on a webcam)"""
         self.camera = cv2.VideoCapture(camera_index)
         # Check if the camera actually turned on
         if not self.camera.isOpened():
@@ -43,13 +45,14 @@ class RubikCVSolver:
         self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     def capture_cube_state(self):
+        """Capture the current state of the cube using the camera"""
         # Make sure we have a camera to work with
         if not self.camera:
             # If no camera, complain about it
             raise Exception("Camera not initialized")
 
         # Print instructions for the user
-        print("=== Rubik's Cube Capture ===")
+        print("=== Rubik Cube Capture ===")
         print("Press 1-6 to capture a face (can be in any order)")
         print("1=F, 2=R, 3=B, 4=L, 5=U, 6=D")
         print("Press Q when done")
@@ -101,7 +104,7 @@ class RubikCVSolver:
                 # Green color if we captured this face, gray if we haven't
                 color = (0, 255, 0) if key in captured_faces else (100, 100, 100)
                 # Show a checkmark if captured, dash if not
-                cv2.putText(display_frame, f"{key}: {'✓' if key in captured_faces else '-'}", 
+                cv2.putText(display_frame, f"{key}: {'Captured' if key in captured_faces else 'Not captured'}", 
                             (10, 100 + i * 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
             # Show the picture on screen
@@ -123,15 +126,20 @@ class RubikCVSolver:
                 colors = self.extract_colors_from_face(frame, face_info)
                 # If we successfully found colors
                 if colors:
-                    # Save the colors for this face
+                    # Flip each row to correct the mirrored camera view
+                    # Flip only certain faces to fix mirrored layout
+                    if face_name in ['F', 'B', 'L', 'R']:
+                        colors = [row[::-1] for row in colors]  # horizontal flip
+
                     captured_faces[face_name] = colors
+
                     # Tell the user we got it
-                    print(f"✓ Captured {face_name}:")
+                    print(f"Captured {face_name}:")
                     # Show the colors we found
                     for row in colors:
                         print(f"  {row}")
                     # Show a success message on screen
-                    cv2.putText(display_frame, "✓ Captured!", (center_x - 50, center_y),
+                    cv2.putText(display_frame, "Captured!", (center_x - 50, center_y),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
                     # Update the screen
                     cv2.imshow('Rubik Cube Capture', display_frame)
@@ -150,14 +158,89 @@ class RubikCVSolver:
         if len(captured_faces) == 6:
             # Save all the face colors
             self.cube_state = captured_faces
-            print("✓ All faces captured!")
+            print("All faces captured!")
             return True
         else:
             # We didn't get all faces
-            print(f"✗ Only {len(captured_faces)} faces captured.")
+            print(f"Only {len(captured_faces)} faces captured.")
             return False
 
+    def recapture_faces(self):
+        """This function lets users re-take pictures of cube faces if they made a mistake"""
+        # Print instructions for the user
+        print("=== Recapture Mode ===")
+        print("Press 1-6 to choose face to recapture (1=F, 2=R, 3=B, 4=L, 5=U, 6=D), q to quit")
+
+        # Map number keys to face names
+        face_mapping = {
+            ord('1'): 'F', ord('2'): 'R', ord('3'): 'B',  # 1=Front, 2=Right, 3=Back
+            ord('4'): 'L', ord('5'): 'U', ord('6'): 'D'   # 4=Left, 5=Up, 6=Down
+        }
+
+        # Keep taking pictures until user quits
+        while True:
+            # Take a picture from the camera
+            ret, frame = self.camera.read()
+            # If camera didn't work, try again
+            if not ret:
+                continue
+
+            # Flip the image like a mirror
+            frame = cv2.flip(frame, 1)
+            # Get the picture size
+            h, w = frame.shape[:2]
+            # Find the center of the picture
+            center_x, center_y = w // 2, h // 2
+            # Set the size of our capture box
+            rect_size = 200
+            # Calculate where to put the capture box
+            x = center_x - rect_size // 2
+            y = center_y - rect_size // 2
+
+            # Make a copy so we can draw on it
+            display_frame = frame.copy()
+            # Write instructions on the screen
+            cv2.putText(display_frame, "Press 1-6 to recapture that face", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            cv2.putText(display_frame, "Press 'q' to exit", (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+            # Draw the capture box
+            cv2.rectangle(display_frame, (x, y), (x + rect_size, y + rect_size), (0, 255, 255), 2)
+
+            # Show the picture on screen
+            cv2.imshow("Recapture", display_frame)
+            # Wait for user to press a key
+            key = cv2.waitKey(1) & 0xFF
+
+            # If user pressed a number key (1-6)
+            if key in face_mapping:
+                # Tell user what we're doing
+                print(f"Recapturing face {face_mapping[key]}")
+                # Set up the capture area
+                face_info = {'bbox': (x, y, rect_size, rect_size)}
+                # Try to detect colors in this area
+                colors = self.extract_colors_from_face(frame, face_info)
+                # If we found colors
+                if colors:
+                    # ✅ Flip each row to correct the mirrored camera view
+                    # Flip only certain faces to fix mirrored layout
+                    if face_name in ['F', 'B', 'L', 'R']:
+                        colors = [row[::-1] for row in colors]  # horizontal flip
+
+                    self.cube_state[face_mapping[key]] = colors
+
+                    # Tell user we got it
+                    print(f"Recaptured {face_mapping[key]}:", colors)
+            # If user pressed 'q', they want to quit
+            elif key == ord('q'):
+                break
+
+        # Close all camera windows
+        cv2.destroyAllWindows()
+        return True
+
     def extract_colors_from_face(self, frame, face_info):
+        """Extract colors from a cube face in the camera frame"""
         # Get the area of the picture where the cube face should be
         x, y, w, h = face_info['bbox']
         # Cut out just that part of the picture
@@ -188,6 +271,7 @@ class RubikCVSolver:
         return colors
 
     def get_dominant_color(self, image_section):
+        """Determine the dominant color in an image section"""
         # Convert the image from normal colors (BGR) to HSV (better for detecting colors)
         hsv = cv2.cvtColor(image_section, cv2.COLOR_BGR2HSV)
         # Get the size of our image section
@@ -229,15 +313,27 @@ class RubikCVSolver:
         return best_match
 
     def solve_cube(self):
-        # For now, just give a simple example solution (this would be more complex in a real solver)
-        self.solution_moves = [('R', 'Move R'), ('U', 'Move U')]
-        # Start at the beginning
-        self.current_step = 0
-        # The cube isn't solved yet
-        self.is_solved = False
-        return True
+        """Use IDA* to solve the cube based on captured state"""
+        if not self.cube_state:
+            print("No cube state loaded")
+            return False
+        try:
+            print("Running IDA* solver...")
+            moves = ida_star(self.cube_state)
+            if not moves:
+                print("No solution found")
+                return False
+            self.solution_moves = [(m, f"Move {m}") for m in moves]
+            self.current_step = 0
+            self.is_solved = False
+            print("Solution found:", moves)
+            return True
+        except Exception as e:
+            print(f"IDA* failed: {e}")
+            return False
 
     def get_current_move(self):
+        """Get the current move to execute"""
         # If we've done all the moves, we're done
         if self.current_step >= len(self.solution_moves):
             return None, "Done"
@@ -245,6 +341,7 @@ class RubikCVSolver:
         return self.solution_moves[self.current_step]
 
     def next_step(self):
+        """Move to the next step in the solution"""
         # Move to the next step
         self.current_step += 1
         # If we've done all steps, mark the cube as solved
@@ -255,117 +352,109 @@ class RubikCVSolver:
         return True
 
     def reset_solution(self):
+        """Reset the solution to the beginning"""
         # Go back to the beginning
         self.current_step = 0
         # The cube isn't solved anymore
         self.is_solved = False
 
     def get_progress(self):
+        """Get current progress through the solution"""
         # Return which step we're on and how many total steps there are
         return self.current_step, len(self.solution_moves)
 
     def map_move_to_game_input(self, move):
-        # Convert solution moves to game controls
-        return {
-            'R': ('R', False),  # R move, not counter-clockwise
-            'U': ('U', False)   # U move, not counter-clockwise
-        }.get(move, ('R', False))  # Default to R move if we don't recognize it
+        """Convert a move string to game input format"""
+        clockwise = True
+        times = 1
+
+        if move.endswith("'"):
+            clockwise = False
+            move = move[0]
+        elif move.endswith("2"):
+            times = 2
+            move = move[0]
+
+        axis_map = {
+            'U': (np.array([0, 1, 0]), 2),
+            'D': (np.array([0, 1, 0]), 0),
+            'R': (np.array([1, 0, 0]), 2),
+            'L': (np.array([1, 0, 0]), 0),
+            'F': (np.array([0, 0, 1]), 2),
+            'B': (np.array([0, 0, 1]), 0)
+        }
+
+        axis, level = axis_map.get(move, (None, None))
+        if axis is None:
+            return []
+        return [(axis, level, clockwise)] * times
+
+    def convert_to_kociemba_string(self):
+        """Convert the captured cube state into a Kociemba-compatible string"""
+        if not self.cube_state:
+            return None
+
+        face_order = ['U', 'R', 'F', 'D', 'L', 'B']  # Kociemba expects this order
+        color_face_map = {}
+
+        # Step 1: Identify center color of each face
+        for face in face_order:
+            center_color = self.cube_state[face][1][1]
+            color_face_map[center_color] = face
+
+        # Step 2: Build the full string
+        kociemba_str = ''
+        for face in face_order:
+            for row in self.cube_state[face]:
+                for color in row:
+                    kociemba_str += color_face_map.get(color, 'X')  # fallback to 'X' if unknown
+        return kociemba_str
 
     def release_camera(self):
+        """Release the camera and clean up"""
         # Turn off the camera if we have one
         if self.camera:
             self.camera.release()
             # Close all the windows we opened
             cv2.destroyAllWindows()
 
-# This function connects our color-detecting solver with the 3D cube game
+
+# Standalone helper functions
+def map_move_to_game_input(move):
+    """Standalone function to convert move string to game input format"""
+    clockwise = True
+    times = 1
+
+    if move.endswith("'"):
+        clockwise = False
+        move = move[0]
+    elif move.endswith("2"):
+        times = 2
+        move = move[0]
+
+    axis_map = {
+        'U': (np.array([0, 1, 0]), 2),
+        'D': (np.array([0, 1, 0]), 0),
+        'R': (np.array([1, 0, 0]), 2),
+        'L': (np.array([1, 0, 0]), 0),
+        'F': (np.array([0, 0, 1]), 2),
+        'B': (np.array([0, 0, 1]), 0)
+    }
+
+    axis, level = axis_map.get(move, (None, None))
+    if axis is None:
+        return []
+    return [(axis, level, clockwise)] * times
+
+
 def integrate_cv_solver_with_rubik(rubik_cube, cv_solver):
-    # If the cube is already solved, don't do anything
+    """Connect the color-detecting solver with the 3D cube game"""
     if cv_solver.is_solved:
         return None
-    # Get the next move we should make
     move, _ = cv_solver.get_current_move()
-    # Convert the move to something the game understands
-    key, ccw = cv_solver.map_move_to_game_input(move)
-    # Map move letters to game axes and levels
-    axis_map = {
-        'R': (np.array([1, 0, 0]), 2),  # R means rotate around X-axis, level 2
-        'U': (np.array([0, 1, 0]), 2)   # U means rotate around Y-axis, level 2
-    }
-    # If we recognize this move
-    if key in axis_map:
-        # Get the axis and level for this move
-        axis, lvl = axis_map[key]
-        # Return the rotation info (axis, level, clockwise direction)
-        return axis, lvl, not ccw
-    # If we don't recognize the move, don't do anything
-    return None
-
-# This function lets users re-take pictures of cube faces if they made a mistake
-def recapture_faces(self):
-    # Print instructions for the user
-    print("=== Recapture Mode ===")
-    print("Press 1-6 to choose face to recapture (1=F, 2=R, 3=B, 4=L, 5=U, 6=D), q to quit")
-
-    # Map number keys to face names
-    face_mapping = {
-        ord('1'): 'F', ord('2'): 'R', ord('3'): 'B',  # 1=Front, 2=Right, 3=Back
-        ord('4'): 'L', ord('5'): 'U', ord('6'): 'D'   # 4=Left, 5=Up, 6=Down
-    }
-
-    # Keep taking pictures until user quits
-    while True:
-        # Take a picture from the camera
-        ret, frame = self.camera.read()
-        # If camera didn't work, try again
-        if not ret:
-            continue
-
-        # Flip the image like a mirror
-        frame = cv2.flip(frame, 1)
-        # Get the picture size
-        h, w = frame.shape[:2]
-        # Find the center of the picture
-        center_x, center_y = w // 2, h // 2
-        # Set the size of our capture box
-        rect_size = 200
-        # Calculate where to put the capture box
-        x = center_x - rect_size // 2
-        y = center_y - rect_size // 2
-
-        # Make a copy so we can draw on it
-        display_frame = frame.copy()
-        # Write instructions on the screen
-        cv2.putText(display_frame, "Press 1-6 to recapture that face", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        cv2.putText(display_frame, "Press 'q' to exit", (10, 60),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        # Draw the capture box
-        cv2.rectangle(display_frame, (x, y), (x + rect_size, y + rect_size), (0, 255, 255), 2)
-
-        # Show the picture on screen
-        cv2.imshow("Recapture", display_frame)
-        # Wait for user to press a key
-        key = cv2.waitKey(1) & 0xFF
-
-        # If user pressed a number key (1-6)
-        if key in face_mapping:
-            # Tell user what we're doing
-            print(f"Recapturing face {face_mapping[key]}")
-            # Set up the capture area
-            face_info = {'bbox': (x, y, rect_size, rect_size)}
-            # Try to detect colors in this area
-            colors = self.extract_colors_from_face(frame, face_info)
-            # If we found colors
-            if colors:
-                # Save the new colors for this face
-                self.cube_state[face_mapping[key]] = colors
-                # Tell user we got it
-                print(f"✓ Recaptured {face_mapping[key]}:", colors)
-        # If user pressed 'q', they want to quit
-        elif key == ord('q'):
-            break
-
-    # Close all camera windows
-    cv2.destroyAllWindows()
-    return True
+    if not move:
+        return None
+    move_steps = cv_solver.map_move_to_game_input(move)
+    if not move_steps:
+        return None
+    return move_steps[0]  # Return first move step (axis, level, clockwise)
