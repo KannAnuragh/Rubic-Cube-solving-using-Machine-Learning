@@ -201,7 +201,7 @@ class Rubik:
                         elif face == 'B':
                             color_name = facelets[2 - row][col]       # Flip vertically + horizontally
                         elif face == 'L':
-                            color_name = facelets[2 - row][2 - col]       # Flip vertically + horizontally
+                            color_name = facelets[2 - row][col]       # Flip vertically + horizontally
                         elif face == 'R':
                             color_name = facelets[2 - row][col]           # Flip vertically
                         elif face == 'U':

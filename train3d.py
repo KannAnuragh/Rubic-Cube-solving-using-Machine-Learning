@@ -43,21 +43,9 @@ while not pr.window_should_close():  # Keep going until user clicks X
     shift_held = pr.is_key_down(pr.KEY_LEFT_SHIFT) or pr.is_key_down(pr.KEY_RIGHT_SHIFT)
     
     # Listen for keyboard buttons being pressed (like controls in a video game)
-    
-    # If user presses X and we have a camera and already took pictures
-    if pr.is_key_pressed(pr.KEY_X) and camera_available and capture_completed:
-        print("Starting recapture mode...")  # Tell user what's happening
-        try:  # Try to do this, but be ready if something goes wrong
-            if cv_solver.recapture_faces():  # Take new pictures of cube faces
-                print("Recapture completed successfully!")  # Success message
-                rubik_cube.update_colors(cv_solver.cube_state)  # Update cube colors
-            else:
-                print("Recapture cancelled or failed")  # Failed message
-        except Exception as e:  # If something breaks
-            print(f"Error during recapture: {e}")  # Tell us what broke
 
     # Manual controls - these let you turn the cube by hand using keyboard
-    elif pr.is_key_pressed(pr.KEY_F):  # F key = Front face
+    if pr.is_key_pressed(pr.KEY_F):  # F key = Front face
         axis = np.array([0, 0, 1])  # Direction to rotate (front-back)
         rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
     elif pr.is_key_pressed(pr.KEY_R):  # F key = Front face
@@ -105,71 +93,59 @@ while not pr.window_should_close():  # Keep going until user clicks X
         capture_completed = False   # Forget captured images
         print("Solution reset")     # Tell user we reset
     
-    '''elif pr.is_key_pressed(pr.KEY_X) and camera_available:  # X key = Manual capture
-        print("Starting manual cube capture mode...")  # Tell user what's happening
-        try:  # Try to do this, but be ready if something goes wrong
-            if cv_solver.capture_cube_state():  # Take pictures manually
-                print("Cube state captured successfully!")  # Success message
-                rubik_cube.update_colors(cv_solver.cube_state)  # Update cube colors
-                capture_completed = True  # Remember we finished
-            else:
-                print("Capture cancelled or incomplete")  # User cancelled
-        except Exception as e:  # If something breaks
-            print(f"Error during capture: {e}")  # Tell us what broke'''
+    
 
     
-    '''elif pr.is_key_pressed(pr.KEY_S) and solver_mode and capture_completed:  # S key = Solve
-        # Figure out how to solve the cube we photographed
-        try:  # Try to do this, but be ready if something goes wrong
-            if cv_solver.solve_cube():  # Calculate solution steps
-                solution_ready = True  # Remember we have a solution
+    elif pr.is_key_pressed(pr.KEY_S) and solver_mode and capture_completed:
+        try:
+            if cv_solver.solve_cube():
+                solution_ready = True
                 print("Solution generated! Press SPACE to step through moves or A for auto-solve.")
             else:
-                print("Failed to generate solution")  # Couldn't figure it out
-        except Exception as e:  # If something breaks
-            print(f"Error generating solution: {e}")  # Tell us what broke
+                print("Failed to generate solution")
+        except Exception as e:
+            print(f"Error generating solution: {e}")
+
     
-    elif pr.is_key_pressed(pr.KEY_SPACE) and solution_ready:  # SPACE = Next step
-        # Do the next move in the solution (one step at a time)
-        if not rubik_cube.is_rotating:  # Only if cube isn't already moving
-            move_data = integrate_cv_solver_with_rubik(rubik_cube, cv_solver)  # Get next move
-            if move_data:  # If we got a valid move
-                axis, level, clockwise = move_data  # Break down the move details
-                rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)  # Add move to queue
-                
-                # Move to the next step in our solution
-                if not cv_solver.next_step():  # Try to go to next step
-                    print("Solution complete! Cube should be solved.")  # We're done!
-                    solution_ready = False  # No more solution to follow
-                    solver_mode = False     # Exit solver mode
+    elif pr.is_key_pressed(pr.KEY_SPACE) and solution_ready:
+        if not rubik_cube.is_rotating:
+            move_data = cv_solver.get_current_move()
+            if move_data and move_data[0]:
+                move = move_data[0]
+                game_moves = cv_solver.map_move_to_game_input(move)
+                for axis, level, clockwise in game_moves:
+                    rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)
+                if not cv_solver.next_step():
+                    print("Solution complete!")
+                    solution_ready = False
+                    solver_mode = False
             else:
-                print("No more moves or invalid move")  # Something went wrong
-                solution_ready = False  # Stop the solution
+                print("No more moves or invalid move")
+                solution_ready = False
+
     
     elif pr.is_key_pressed(pr.KEY_A) and solution_ready:  # A key = Auto-solve
         # Turn on/off automatic solving (computer does all moves by itself)
         auto_solve = not auto_solve  # Flip between on and off
-        print(f"Auto-solve mode: {'ON' if auto_solve else 'OFF'}")  # Tell user current state'''
+        print(f"Auto-solve mode: {'ON' if auto_solve else 'OFF'}")  # Tell user current state
     
     # Auto-solve functionality (computer automatically does moves)
-    '''if auto_solve and solution_ready and not rubik_cube.is_rotating:  # If auto-solve is on and cube isn't moving
-        move_data = integrate_cv_solver_with_rubik(rubik_cube, cv_solver)  # Get next move
-        if move_data:  # If we got a valid move
-            move_steps = map_move_to_game_input(move_data)
-            for axis, level, clockwise in move_steps:
+    if auto_solve and solution_ready and not rubik_cube.is_rotating:
+        move_data = cv_solver.get_current_move()
+        if move_data and move_data[0]:
+            move = move_data[0]
+            game_moves = cv_solver.map_move_to_game_input(move)
+            for axis, level, clockwise in game_moves:
                 rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)
+            if not cv_solver.next_step():
+                print("Auto-solve complete!")
+                auto_solve = False
+                solution_ready = False
+                solver_mode = False
+        else:
+            auto_solve = False
+            solution_ready = False
 
-            # Break down the move details
-            rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)  # Add move to queue
-            
-            if not cv_solver.next_step():  # Try to go to next step
-                print("Auto-solve complete!")  # We finished solving!
-                auto_solve = False      # Turn off auto-solve
-                solution_ready = False  # No more solution
-                solver_mode = False     # Exit solver mode
-        else:  # Something went wrong
-            auto_solve = False      # Turn off auto-solve
-            solution_ready = False  # Stop the solution'''
 
     # Handle rotation animation (make the cube actually turn smoothly)
     rotation_queue, _ = rubik_cube.handle_rotation(rotation_queue)
@@ -236,11 +212,11 @@ while not pr.window_should_close():  # Keep going until user clicks X
     y_offset += 25  # Move down for next line
     
     if camera_available:  # If camera is working
-        pr.draw_text(b"C-Capture cube | X-Recapture faces | S-Solve | SPACE-Next | A-Auto | ESC-Reset", 10, y_offset, 12, pr.DARKGRAY)  # Camera controls
+        pr.draw_text(b"C-Capture cube | S-Solve | SPACE-Next | A-Auto | ESC-Reset", 10, y_offset, 12, pr.DARKGRAY)  # Camera controls
         y_offset += 20  # Move down for next line
         
         if capture_completed:  # If we already took pictures
-            pr.draw_text(b"Capture completed! Use X to recapture individual faces if needed", 10, y_offset, 11, pr.DARKGREEN)  # Success message
+            pr.draw_text(b"Capture completed!", 10, y_offset, 11, pr.DARKGREEN)  # Success message
         else:  # If we haven't taken pictures yet
             pr.draw_text(b"Press C to start capturing cube faces", 10, y_offset, 11, pr.GRAY)  # Instruction
     else:  # If camera doesn't work
