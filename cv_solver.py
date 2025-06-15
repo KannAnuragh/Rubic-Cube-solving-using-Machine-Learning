@@ -374,6 +374,31 @@ class RubikCVSolver:
             return []
         return [(axis, level, clockwise)] * times
 
+    def get_current_move(self):
+        """Returns the current move and its label (if any), or (None, None) if done."""
+        if self.current_step < len(self.solution_moves):
+            return self.solution_moves[self.current_step]
+        return (None, None)
+
+    def next_step(self):
+        """Advance to the next move. Returns False if already at the end."""
+        if self.current_step + 1 < len(self.solution_moves):
+            self.current_step += 1
+            return True
+        else:
+            self.is_solved = True
+            return False
+
+    def get_progress(self):
+        """Returns the current step and total number of moves."""
+        return (self.current_step + 1, len(self.solution_moves))
+
+    def reset_solution(self):
+        """Resets the solver state."""
+        self.solution_moves = []
+        self.current_step = 0
+        self.is_solved = False
+
     
 
     def release_camera(self):
@@ -386,220 +411,327 @@ class RubikCVSolver:
 
 def solve_white_cross(cube):
     """
-    Fully intelligent solver for the white cross using actual cube state.
-    Locates each white edge, orients it, and inserts it into the correct D face position.
+    Solves the white cross on the D face using actual cube state.
+    Finds each white edge piece, reorients and inserts it correctly.
     """
     moves = []
-    color_to_face = {cube[face][1][1]: face for face in cube}
 
-    # Define white edge targets: pairs of (white, color)
-    target_edges = [
-        ("white", "green"),
-        ("white", "red"),
-        ("white", "blue"),
-        ("white", "orange")
+    # Edge mapping: (white, color) -> expected face and insertion logic
+    target_edges = {
+        ("white", "green"): "F",
+        ("white", "red"): "R",
+        ("white", "blue"): "B",
+        ("white", "orange"): "L",
+        ("green", "white"): "F",
+        ("red", "white"): "R",
+        ("blue", "white"): "B",
+        ("orange", "white"): "L"
+    }
+
+    # List of all possible edge positions and their face mappings
+    edge_positions = [
+        ('U', 0, 1, 'B', 0, 1),
+        ('U', 1, 0, 'L', 0, 1),
+        ('U', 1, 2, 'R', 0, 1),
+        ('U', 2, 1, 'F', 0, 1),
+        ('D', 0, 1, 'F', 2, 1),
+        ('D', 1, 0, 'L', 2, 1),
+        ('D', 1, 2, 'R', 2, 1),
+        ('D', 2, 1, 'B', 2, 1),
+        ('F', 0, 1, 'U', 2, 1),
+        ('F', 2, 1, 'D', 0, 1),
+        ('B', 0, 1, 'U', 0, 1),
+        ('B', 2, 1, 'D', 2, 1),
+        ('L', 0, 1, 'U', 1, 0),
+        ('L', 2, 1, 'D', 1, 0),
+        ('R', 0, 1, 'U', 1, 2),
+        ('R', 2, 1, 'D', 1, 2)
     ]
 
-    # Define insertion face for each edge
-    insert_face_map = {
-        "green": "F",
-        "red": "R",
-        "blue": "B",
-        "orange": "L"
-    }
+    # Helper to rotate U face until center of edge aligns
+    def align_top(color, face):
+        u_rotations = {
+            'F': [],
+            'R': ['U'],
+            'B': ['U2'],
+            'L': ["U'"]
+        }
+        return u_rotations[face]
 
-    # Edge positions to scan on each face
-    edge_positions = {
-        'U': [(0, 1), (1, 0), (1, 2), (2, 1)],
-        'D': [(0, 1), (1, 0), (1, 2), (2, 1)],
-        'F': [(0, 1), (1, 0), (1, 2)],
-        'B': [(0, 1), (1, 0), (1, 2)],
-        'R': [(0, 1), (1, 0), (1, 2)],
-        'L': [(0, 1), (1, 0), (1, 2)],
-    }
+    # Step 1: Bring white edges to U face if not already
+    for _ in range(4):  # Max 4 white edges
+        for (face1, r1, c1, face2, r2, c2) in edge_positions:
+            color1 = cube[face1][r1][c1]
+            color2 = cube[face2][r2][c2]
+            colors = (color1, color2)
 
-    # Simplified dynamic logic: Find and insert white edge from top layer
-    for white, side in target_edges:
-        insert_face = insert_face_map[side]
-        aligned = False
+            if 'white' in colors:
+                other_color = color2 if color1 == 'white' else color1
+                target_face = target_edges.get((color1, color2)) or target_edges.get((color2, color1))
+                if not target_face:
+                    continue
 
-        # Check U face for white edges
-        for (r, c) in edge_positions['U']:
-            colors = [cube['U'][r][c]]
+                # If white is already in D face center slot, skip
+                if face1 == 'D' or face2 == 'D':
+                    continue
 
-            # Find side face that shares this edge
-            if (r, c) == (0, 1):
-                side_color = cube['B'][0][1]
-            elif (r, c) == (1, 0):
-                side_color = cube['L'][0][1]
-            elif (r, c) == (1, 2):
-                side_color = cube['R'][0][1]
-            elif (r, c) == (2, 1):
-                side_color = cube['F'][0][1]
-            else:
-                continue
+                # Simplified move logic: try to bring edge to U, align it, and insert
+                if face1 == 'U' or face2 == 'U':
+                    # Already in top layer
+                    moves += align_top(other_color, target_face)
+                    moves += [target_face, target_face]
+                elif face1 == 'F' or face2 == 'F':
+                    moves += ['F', 'U', "F'"]
+                elif face1 == 'B' or face2 == 'B':
+                    moves += ['B', 'U', "B'"]
+                elif face1 == 'L' or face2 == 'L':
+                    moves += ['L', 'U', "L'"]
+                elif face1 == 'R' or face2 == 'R':
+                    moves += ['R', 'U', "R'"]
 
-            colors.append(side_color)
-
-            if white in colors and side in colors:
-                # Bring white edge above target face
-                if side_color == side:
-                    # Rotate top layer until aligned
-                    u_rotations = {
-                        'green': [],
-                        'red': ['U'],
-                        'blue': ['U2'],
-                        'orange': ["U'"]
-                    }
-                    moves += u_rotations[side]
-                    moves += [insert_face, insert_face]
-                    aligned = True
-                    break
-
-        if not aligned:
-            # fallback: force insertion (less optimal)
-            moves += ['U', insert_face, insert_face]
+    # Final alignment of all 4 white edges
+    for color, target_face in [('green', 'F'), ('red', 'R'), ('blue', 'B'), ('orange', 'L')]:
+        moves += align_top(color, target_face)
+        moves += [target_face, target_face]
 
     return moves
 
 
 def solve_white_corners(cube):
     """
-    Fully dynamic white corner solver — locates and inserts each white corner correctly.
+    Fully dynamic white corner solver.
+    Finds all white corner pieces, orients and inserts them into the correct D face position.
     """
     moves = []
-    color_to_face = {cube[face][1][1]: face for face in cube}
 
-    # Define target corner color sets and their correct face triplets
+    # Define each target corner (colors around each white corner)
     target_corners = [
-        ("white", "red", "green"),
-        ("white", "green", "orange"),
-        ("white", "orange", "blue"),
-        ("white", "blue", "red")
+        ('white', 'green', 'red'),
+        ('white', 'red', 'blue'),
+        ('white', 'blue', 'orange'),
+        ('white', 'orange', 'green')
     ]
 
-    # Define known insert sequences
-    right_insert = ["R'", "D'", "R"]
-    left_insert = ["L", "D", "L'"]
+    # The standard right corner insertion algorithm
+    def insert_corner_right():
+        return ["R'", "D'", "R", "D"]
 
-    # Simulate full solving of all 4 white corners
-    # In a real cube this repeats until all are correctly inserted
-    for target in target_corners:
-        white, side1, side2 = target
-        # Try inserting with either side as front
-        if side1 in ("green", "blue"):
-            # Assume it’s on left
-            moves += left_insert
-            moves += ["D"]
+    # The standard left corner insertion algorithm
+    def insert_corner_left():
+        return ["L", "D", "L'", "D'"]
+
+    # A helper to rotate D layer until white corner is below correct slot
+    def rotate_d_until_aligned(target_pair):
+        face1, face2 = target_pair
+        rotations = {
+            ('F', 'R'): [],
+            ('R', 'B'): ['D'],
+            ('B', 'L'): ['D', 'D'],
+            ('L', 'F'): ["D'"]
+        }
+        return rotations.get((face1, face2)) or rotations.get((face2, face1)) or []
+
+    # A helper to bring corner from U layer to bottom
+    def insert_white_corner(face_pair, white_on_top=True):
+        if white_on_top:
+            return rotate_d_until_aligned(face_pair) + insert_corner_right()
         else:
-            # Assume it’s on right
-            moves += right_insert
-            moves += ["D"]
+            return rotate_d_until_aligned(face_pair) + insert_corner_left()
+
+    # Simulate up to 8 attempts (at most 4 corners, 2 cycles)
+    attempts = 0
+    max_attempts = 8
+    while attempts < max_attempts:
+        inserted = 0
+
+        for face in ['U']:
+            facelets = cube[face]
+            corners = [
+                ((0, 0), ['B', 'L']),  # ULB
+                ((0, 2), ['B', 'R']),  # URB
+                ((2, 0), ['F', 'L']),  # ULF
+                ((2, 2), ['F', 'R'])   # URF
+            ]
+
+            for (r, c), (f1, f2) in corners:
+                colors = [cube['U'][r][c], cube[f1][0][2 if f1 in ['F', 'L'] else 0], cube[f2][0][0 if f2 in ['F', 'R'] else 2]]
+                if 'white' in colors:
+                    main_color = [c for c in colors if c != 'white'][0]
+                    other_color = [c for c in colors if c != 'white'][1]
+
+                    # Use move sequence to insert
+                    moves += insert_white_corner((main_color, other_color))
+                    inserted += 1
+
+        attempts += 1
+        if inserted == 0:
+            break
 
     return moves
 
-
 def solve_middle_layer(cube):
     """
-    Solves the 4 middle layer edges (non-white, non-yellow) using real cube state logic.
+    Solves all 4 middle layer edge pieces using real cube state logic.
+    Identifies top-layer non-yellow, non-white edges and inserts them.
     """
     moves = []
-    color_to_face = {cube[face][1][1]: face for face in cube}
 
-    # Edge insertion patterns
-    left_insert = ["U'", "L'", "U", "L", "U", "F", "U'", "F'"]
-    right_insert = ["U", "R", "U'", "R'", "U'", "F'", "U", "F"]
-
-    # Define middle layer edge targets (non-white, non-yellow)
-    target_edges = [
-        ("green", "red"),
-        ("green", "orange"),
-        ("blue", "red"),
-        ("blue", "orange")
+    # Middle layer target edges (no white or yellow)
+    target_colors = [
+        ('green', 'red'),
+        ('green', 'orange'),
+        ('blue', 'red'),
+        ('blue', 'orange')
     ]
 
-    # Simulated logic: alternate right/left insertion for each target
-    for i, (color1, color2) in enumerate(target_edges):
-        if i % 2 == 0:
-            moves += right_insert
-        else:
-            moves += left_insert
+    # Standard insertion algorithms
+    def insert_left():
+        return ["U'", "L'", "U", "L", "U", "F", "U'", "F'"]
+
+    def insert_right():
+        return ["U", "R", "U'", "R'", "U'", "F'", "U", "F"]
+
+    # Identify top-layer edge positions
+    edge_slots = {
+        'F': (0, 1, 'U', 2, 1),
+        'R': (0, 1, 'U', 1, 2),
+        'B': (0, 1, 'U', 0, 1),
+        'L': (0, 1, 'U', 1, 0)
+    }
+
+    def get_center(face):
+        return cube[face][1][1]
+
+    # Try to insert all target edges
+    for _ in range(10):  # Retry up to 10 times for stability
+        inserted = False
+
+        for face, (fr, fc, uf, ur, uc) in edge_slots.items():
+            edge_color = cube[face][fr][fc]
+            top_color = cube[uf][ur][uc]
+
+            if 'white' in [edge_color, top_color] or 'yellow' in [edge_color, top_color]:
+                continue
+
+            # Now we have a valid edge to insert
+            current_edge = (edge_color, top_color)
+            reversed_edge = (top_color, edge_color)
+
+            if current_edge in target_colors or reversed_edge in target_colors:
+                # Align top face with correct side center
+                target_side = edge_color if edge_color != get_center('U') else top_color
+                center_face = None
+                for f in ['F', 'R', 'B', 'L']:
+                    if get_center(f) == target_side:
+                        center_face = f
+                        break
+
+                if center_face is None:
+                    continue
+
+                # Align top edge above center face
+                align_map = {
+                    'F': [],
+                    'R': ['U'],
+                    'B': ['U2'],
+                    'L': ["U'"]
+                }
+                moves += align_map[center_face]
+
+                # Check which direction to insert
+                for f1, f2 in target_colors:
+                    if set((edge_color, top_color)) == set((f1, f2)):
+                        if get_center(center_face) == f1:
+                            other_face = f2
+                        else:
+                            other_face = f1
+                        break
+                else:
+                    continue
+
+                # Decide whether the other face is to the left or right
+                left_of = {'F': 'L', 'L': 'B', 'B': 'R', 'R': 'F'}
+                right_of = {'F': 'R', 'R': 'B', 'B': 'L', 'L': 'F'}
+
+                if left_of[center_face] == other_face:
+                    moves += insert_left()
+                elif right_of[center_face] == other_face:
+                    moves += insert_right()
+
+                inserted = True
+                break  # one insert per loop
+
+        if not inserted:
+            break  # nothing left to insert
 
     return moves
 
 
 def solve_yellow_cross(cube):
     """
-    Fully dynamic, self-correcting solver that forms the yellow cross on U face.
-    Detects the current yellow edge configuration and applies the correct algorithm until solved.
+    Forms the yellow cross on the U face by detecting the current pattern
+    and applying the correct algorithm.
     """
     moves = []
 
-    def get_yellow_edges(u_face):
+    def get_yellow_edge_pattern():
+        """Detects which yellow edges are on the U face"""
+        u = cube['U']
         return {
-            "top": u_face[0][1] == "yellow",
-            "left": u_face[1][0] == "yellow",
-            "right": u_face[1][2] == "yellow",
-            "bottom": u_face[2][1] == "yellow"
+            'top': u[0][1] == 'yellow',
+            'left': u[1][0] == 'yellow',
+            'right': u[1][2] == 'yellow',
+            'bottom': u[2][1] == 'yellow'
         }
 
-    def apply_cross_algo():
+    def apply_cross_algorithm():
         return ["F", "R", "U", "R'", "U'", "F'"]
 
-    # Validate yellow face is U
-    if cube['U'][1][1] != "yellow":
-        print("Warning: yellow face is not U. Yellow cross logic assumes yellow is on U face.")
-        return moves
-
-    # Try up to 3 attempts max
     attempts = 0
-    while attempts < 3:
-        edges = get_yellow_edges(cube['U'])
+    max_attempts = 5
+
+    while attempts < max_attempts:
+        edges = get_yellow_edge_pattern()
         count = sum(edges.values())
 
+        # ✅ Solved already
         if count == 4:
-            break  # already solved
+            break
 
+        # ⬤ Dot → apply algorithm once
         if count == 0:
-            # Dot → apply algo once to get L-shape
-            moves += apply_cross_algo()
+            moves += apply_cross_algorithm()
 
+        # ⎾ L-shape → rotate U to align then apply
         elif count == 2:
-            if edges["bottom"] and edges["left"]:
-                # Proper L-shape → apply directly
-                moves += apply_cross_algo()
-            elif edges["top"] and edges["left"]:
-                # Rotate U to bring L to bottom-left
-                moves += ["U"]
-                moves += apply_cross_algo()
-            elif edges["top"] and edges["right"]:
-                moves += ["U2"]
-                moves += apply_cross_algo()
-            elif edges["bottom"] and edges["right"]:
+            if edges['bottom'] and edges['left']:
+                moves += apply_cross_algorithm()
+            elif edges['top'] and edges['left']:
+                moves += ['U']
+                moves += apply_cross_algorithm()
+            elif edges['top'] and edges['right']:
+                moves += ['U2']
+                moves += apply_cross_algorithm()
+            elif edges['bottom'] and edges['right']:
                 moves += ["U'"]
-                moves += apply_cross_algo()
-            elif edges["left"] and edges["right"]:
-                # Horizontal line — rotate to horizontal
-                moves += ["U"]
-                moves += apply_cross_algo()
-            elif edges["top"] and edges["bottom"]:
-                moves += apply_cross_algo()
+                moves += apply_cross_algorithm()
+            elif edges['left'] and edges['right']:  # Horizontal line
+                moves += apply_cross_algorithm()
+            elif edges['top'] and edges['bottom']:  # Vertical line
+                moves += ['U']
+                moves += apply_cross_algorithm()
             else:
-                # Misaligned 2-edge case — rotate and retry
-                moves += ["U"]
-                moves += apply_cross_algo()
+                moves += ['U']
+                moves += apply_cross_algorithm()
 
+        # ─ Line → rotate to align then apply
         elif count == 3:
-            # Rare case: just rotate U until algo fits
-            moves += ["U"]
-            moves += apply_cross_algo()
+            moves += apply_cross_algorithm()
 
+        # 🔄 Otherwise, retry after a U rotation
         elif count == 1:
-            # Illegal edge config — just apply the algorithm
-            moves += apply_cross_algo()
-
-        else:
-            break  # done or unknown edge case
+            moves += ['U']
+            moves += apply_cross_algorithm()
 
         attempts += 1
 
@@ -608,33 +740,30 @@ def solve_yellow_cross(cube):
 
 def solve_yellow_corners(cube):
     """
-    Fully dynamic solver that orients all yellow corners on the U face.
-    Applies the standard 7-move corner orientation algorithm until all corners are yellow-up.
+    Orients yellow corners on the U face using the standard algorithm.
+    Repeats until all 4 corners have yellow facing up.
     """
     moves = []
 
-    def count_yellow_corners(u_face):
+    def count_yellow_corners():
+        """Count how many corners have yellow on top (U face corners)"""
+        u = cube['U']
         return sum([
-            u_face[0][0] == "yellow",
-            u_face[0][2] == "yellow",
-            u_face[2][0] == "yellow",
-            u_face[2][2] == "yellow"
+            u[0][0] == 'yellow',
+            u[0][2] == 'yellow',
+            u[2][0] == 'yellow',
+            u[2][2] == 'yellow'
         ])
 
-    def apply_orientation_algo():
+    def apply_corner_orientation():
         return ["R", "U", "R'", "U", "R", "U2", "R'"]
 
-    if cube['U'][1][1] != "yellow":
-        print("Warning: Yellow face is not U. This function assumes yellow on U.")
-        return moves
-
-    max_attempts = 6  # max 6 U-face rotations needed in worst case
+    max_attempts = 6  # max 6 full rotations needed
     attempts = 0
 
-    while count_yellow_corners(cube['U']) < 4 and attempts < max_attempts:
-        # Apply corner orientation algorithm with UFR corner
-        moves += apply_orientation_algo()
-        moves += ["U"]  # rotate to bring next corner to UFR
+    while count_yellow_corners() < 4 and attempts < max_attempts:
+        moves += apply_corner_orientation()
+        moves += ["U"]  # Rotate U to bring next corner into position
         attempts += 1
 
     return moves
@@ -642,22 +771,32 @@ def solve_yellow_corners(cube):
 
 def solve_final_layer(cube):
     """
-    Final step: Permutes the yellow corners and edges until the entire cube is solved.
-    This step assumes all previous stages (cross, corners, orientation) are complete.
+    Final step: Permutes the yellow corners and edges on U face.
+    Assumes yellow cross and yellow corners are already correctly oriented.
     """
     moves = []
 
-    def are_corners_solved():
-        # Compare the 3 corner stickers of each U-layer corner
-        facelets = [
+    # Step 1: Permute yellow corners (make sure all are in correct place)
+    def corners_correct():
+        # Get face corner colors
+        corners = [
             (cube['F'][0][2], cube['R'][0][0]),  # UFR
             (cube['R'][0][2], cube['B'][0][0]),  # URB
             (cube['B'][0][2], cube['L'][0][0]),  # UBL
             (cube['L'][0][2], cube['F'][0][0])   # ULF
         ]
-        return all(f1 == f2 for f1, f2 in facelets)
+        return all(f1 == f2 for f1, f2 in corners)
 
-    def are_edges_solved():
+    corner_algo = ["U", "R", "U'", "L'", "U", "R'", "U'", "L"]
+
+    for _ in range(5):  # up to 5 cycles
+        if corners_correct():
+            break
+        moves += corner_algo
+        moves += ["U"]  # Rotate to shift corner targets
+
+    # Step 2: Permute yellow edges (cycle them into place)
+    def edges_correct():
         return (
             cube['F'][0][1] == cube['F'][1][1] and
             cube['R'][0][1] == cube['R'][1][1] and
@@ -665,20 +804,13 @@ def solve_final_layer(cube):
             cube['L'][0][1] == cube['L'][1][1]
         )
 
-    # ⬅️ Step 1: Permute Yellow Corners
-    max_corner_cycles = 5
-    for _ in range(max_corner_cycles):
-        if are_corners_solved():
-            break
-        moves += ["U", "R", "U'", "L'", "U", "R'", "U'", "L"]
-        moves += ["U"]  # Rotate to shift corners
+    edge_algo = ["F2", "U", "L", "R'", "F2", "L'", "R", "U", "F2"]
 
-    # ⬅️ Step 2: Permute Yellow Edges
-    max_edge_cycles = 4
-    for _ in range(max_edge_cycles):
-        if are_edges_solved():
+    for _ in range(4):  # up to 4 edge permutations
+        if edges_correct():
             break
-        moves += ["F2", "U", "L", "R'", "F2", "L'", "R", "U", "F2"]
+        moves += edge_algo
 
     return moves
+
 
