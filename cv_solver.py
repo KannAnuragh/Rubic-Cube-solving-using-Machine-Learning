@@ -31,49 +31,65 @@ class RubikCVSolver:
 
         # These are the names for each face of the cube (like Front, Back, etc.)
         self.face_names = ['F', 'B', 'R', 'L', 'U', 'D']
-    def solve_cube(self):
-        """
-        Built-in beginner Rubik’s Cube solver (no external libraries).
-        Returns a list of basic moves like ['F', 'U', 'R', "R'", etc.]
-        """
+
+
+    def solve_cube(self, use_thistlethwaite=False):
+        """Solve the cube using the built-in or Thistlethwaite algorithm"""
         if not self.cube_state:
             print("No cube state loaded")
             return False
 
         try:
-            moves = []
+            # Convert facelet state to Thistlethwaite format if needed
+            if use_thistlethwaite:
+                from thistlethwaite_solver import RubiksCube, ThistlethwaiteSolver
 
-            # STEP 0: Prepare the cube state in facelet format (6 faces: U, R, F, D, L, B)
-            face_order = ['U', 'R', 'F', 'D', 'L', 'B']
-            cube = {face: self.cube_state[face] for face in face_order}
+                # Convert facelet cube state to Thistlethwaite's format
+                color_to_face = {
+                    'white': 0, 'orange': 1, 'green': 2,
+                    'red': 3, 'blue': 4, 'yellow': 5
+                }
 
-            # STEP 1: Build White Cross
-            moves += solve_white_cross(cube)
+                face_order = ['U', 'L', 'F', 'R', 'B', 'D']
+                cube = RubiksCube()
 
-            # STEP 2: Solve White Corners
-            moves += solve_white_corners(cube)
+                for face_idx, face in enumerate(face_order):
+                    facelets = self.cube_state[face]
+                    cube.cube[face_idx] = np.array([
+                        color_to_face[color] for row in facelets for color in row
+                    ], dtype=np.int8)
 
-            # STEP 3: Solve Middle Layer
-            moves += solve_middle_layer(cube)
+                solver = ThistlethwaiteSolver()
+                move_string = solver.solve(cube)
+                if not move_string:
+                    print("Thistlethwaite solver failed or cube already solved")
+                    return False
 
-            # STEP 4: Build Yellow Cross
-            moves += solve_yellow_cross(cube)
+                moves = move_string.split()
 
-            # STEP 5: Position Yellow Corners
-            moves += solve_yellow_corners(cube)
+            else:
+                # Use the built-in beginner solver
+                moves = []
+                face_order = ['U', 'R', 'F', 'D', 'L', 'B']
+                cube = {face: self.cube_state[face] for face in face_order}
+                moves += solve_white_cross(cube)
+                moves += solve_white_corners(cube)
+                moves += solve_middle_layer(cube)
+                moves += solve_yellow_cross(cube)
+                moves += solve_yellow_corners(cube)
+                moves += solve_final_layer(cube)
 
-            # STEP 6: Position Yellow Edges (Final)
-            moves += solve_final_layer(cube)
-
+            # Convert move list to game instructions
             self.solution_moves = [(m, f"Move {m}") for m in moves]
             self.current_step = 0
             self.is_solved = False
-            print("Solved using built-in beginner method:", moves)
+            print("Solved! Moves:", moves)
             return True
 
         except Exception as e:
             print(f"Solver error: {e}")
             return False
+
 
 
 

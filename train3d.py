@@ -64,7 +64,17 @@ while not pr.window_should_close():  # Keep going until user clicks X
     elif pr.is_key_pressed(pr.KEY_D):  # D key = Down face
         axis = np.array([0, 1, 0])  # Direction to rotate (up-down)
         rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 0, not shift_held)
-    
+    elif pr.is_key_pressed(pr.KEY_T) and solver_mode and capture_completed:
+        try:
+            print("Solving using Thistlethwaite's method...")
+            if cv_solver.solve_cube(use_thistlethwaite=True):
+                solution_ready = True
+                print("Thistlethwaite solution ready. Press SPACE to step or A to auto-solve.")
+            else:
+                print("Thistlethwaite solver failed.")
+        except Exception as e:
+            print(f"Error during Thistlethwaite solve: {e}")
+
     # Computer Vision Solver Controls (using camera to solve automatically)
     elif pr.is_key_pressed(pr.KEY_C) and camera_available:  # C key = Capture with camera
         # Take pictures of the cube to see what colors are where
