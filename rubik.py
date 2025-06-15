@@ -23,27 +23,7 @@ class Cube:
         self.create_model()
     
 
-    def convert_to_kociemba_string(self):
-        """Convert the captured cube state into a Kociemba-compatible string"""
-        if not self.cube_state:
-            return None
-
-        face_order = ['U', 'R', 'F', 'D', 'L', 'B']  # Kociemba expects this order
-        color_face_map = {}
-
-        # Step 1: Identify center color of each face
-        for face in face_order:
-            center_color = self.cube_state[face][1][1]
-            color_face_map[center_color] = face
-
-        # Step 2: Build the full string
-        kociemba_str = ''
-        for face in face_order:
-            for row in self.cube_state[face]:
-                for color in row:
-                    kociemba_str += color_face_map.get(color, 'X')  # fallback to 'X' if unknown
-        return kociemba_str
-
+ 
 
     def gen_mesh(self, scale):
         # Check if we got different sizes for width, height, depth
