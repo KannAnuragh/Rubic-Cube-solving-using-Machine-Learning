@@ -205,7 +205,39 @@ class RubiksCube:
         print("    " + " ".join([self.colors[x] for x in self.cube[5][3:6]]))
         print("    " + " ".join([self.colors[x] for x in self.cube[5][6:9]]))
         print()
+    
 
+    def test_moves(self, moves: str):
+        """
+        Test a sequence of moves and show the result
+        Usage: test_moves("L D Bi Fi")
+        """
+        print(f"Testing moves: {moves}")
+        print("Initial state:")
+        self.print_cube()
+        
+        # Parse moves (handle 'i' suffix for inverse moves)
+        move_list = moves.strip().split()
+        parsed_moves = []
+        
+        for move in move_list:
+            if move.endswith('i'):
+                # Convert 'Bi' to 'B''
+                base_move = move[:-1]
+                parsed_moves.append(base_move + "'")
+            else:
+                parsed_moves.append(move)
+        
+        # Apply the moves
+        for move in parsed_moves:
+            print(f"Applying: {move}")
+            self.apply_move(move)
+        
+        print(f"\nFinal state after moves: {' '.join(parsed_moves)}")
+        self.print_cube()
+        print(f"Is solved: {self.is_solved()}")
+
+    
 
 class ThistlethwaiteSolver:
     """
@@ -223,7 +255,7 @@ class ThistlethwaiteSolver:
         
         # Lookup tables for each stage
         self.lookup_tables = [{}, {}, {}, {}]
-        self.max_depth = [7, 10, 13, 15]  # Maximum search depth for each stage
+        self.max_depth = [50, 50, 50, 50]  # Maximum search depth for each stage
         
         # Load lookup tables from files if requested
         if load_tables:
@@ -231,8 +263,11 @@ class ThistlethwaiteSolver:
     
     def _load_lookup_tables(self):
         """Load lookup tables from stage files"""
+        import os
+
+        self.lookup_tables = [{} for _ in range(4)]  # ensure list of dicts exists
         stage_files = ["stage0.txt", "stage1.txt", "stage2.txt", "stage3.txt"]
-        
+
         for stage, filename in enumerate(stage_files):
             if os.path.exists(filename):
                 print(f"Loading {filename}...")
@@ -242,28 +277,24 @@ class ThistlethwaiteSolver:
                             line = line.strip()
                             if not line:
                                 continue
-                            
-                            # Parse the line: hash followed by moves
-                            parts = line.split()
-                            if len(parts) < 2:
-                                continue
-                            
-                            hash_key = parts[0]
-                            # Join all parts except the first as the solution
-                            # Remove "NP" and "." markers, convert move notation
-                            moves = " ".join(parts[1:])
-                            moves = self._parse_moves(moves)
-                            
-                            if moves:  # Only add if we have valid moves
-                                self.lookup_tables[stage][hash_key] = moves
-                    
+
+                            # First 7 chars are always the hash key (keep as string)
+                            hash_key = line[:7].strip()
+                            move_text = line[8:].strip()
+
+                            # Remove markers like NP, ., etc.
+                            move_text = self._parse_moves(move_text)
+
+                            if move_text:
+                                self.lookup_tables[stage][hash_key] = move_text
+
                     print(f"Loaded {len(self.lookup_tables[stage])} entries from {filename}")
-                
+
                 except Exception as e:
                     print(f"Error loading {filename}: {e}")
             else:
                 print(f"Warning: {filename} not found, using BFS for stage {stage + 1}")
-    
+
     def _parse_moves(self, moves_str: str) -> str:
         """
         Parse moves from file format to standard notation
@@ -343,8 +374,12 @@ class ThistlethwaiteSolver:
         # First try lookup table if available
         if self.lookup_tables[stage]:
             cube_hash = self._hash_cube_for_stage(cube, stage)
+            print(f"[DEBUG] Stage {stage} hash: {cube_hash}")
+
             if cube_hash in self.lookup_tables[stage]:
                 moves_str = self.lookup_tables[stage][cube_hash]
+                print(f"[DEBUG] Stage {stage} hash: {cube_hash}")
+
                 if moves_str:
                     return moves_str.split()
         
@@ -497,7 +532,7 @@ class ThistlethwaiteSolver:
         # Convert to string hash (you may need to adjust format)
         hash_val = 0
         for i, val in enumerate(edge_data):
-            hash_val += val * (2 ** i)
+            hash_val += int(val) * (2 ** i)
         
         return f"{hash_val:06d}"  # 6-digit hash to match your format
     
@@ -510,26 +545,36 @@ class ThistlethwaiteSolver:
         for face, pos in corners:
             corner_data.append(cube.cube[face][pos])
         
-        hash_val = sum(corner_data) % 1000000
+        hash_val = sum(int(v) for v in corner_data) % 1000000
+
         return f"{hash_val:06d}"
     
     def _hash_corner_permutation(self, cube: RubiksCube) -> str:
-        """Create hash for corner permutations (Stage 3)"""
-        # Simplified hash
-        corner_positions = []
-        corners = [(0, 0), (0, 2), (0, 6), (0, 8)]
-        
-        for face, pos in corners:
-            corner_positions.append(cube.cube[face][pos])
-        
-        hash_val = sum(i * corner_positions[i] for i in range(len(corner_positions))) % 1000000
-        return f"{hash_val:06d}"
+        """
+        Create hash for corner permutations (Stage 2)
+        Updated to match 7-digit format used in stage2.txt
+        """
+        # Use all 8 corner facelets (on U and D faces)
+        corner_indices = [
+            (0, 0), (0, 2), (0, 6), (0, 8),  # U face corners
+            (5, 0), (5, 2), (5, 6), (5, 8)   # D face corners
+        ]
+
+        corner_vals = [int(cube.cube[f][i]) for f, i in corner_indices]
+
+        hash_val = 0
+        for idx, val in enumerate(corner_vals):
+            hash_val += val * (6 ** idx)  # base-6 encoding to ensure unique 7-digit hash
+
+        return f"{hash_val:07d}"  # pad to 7 digits (e.g., 0000001)
+
     
     def _hash_final_state(self, cube: RubiksCube) -> str:
         """Create hash for final state (Stage 4)"""
         # Simple hash of entire cube state
         flat_cube = cube.cube.flatten()
-        hash_val = sum(i * flat_cube[i] for i in range(len(flat_cube))) % 1000000
+        hash_val = sum(i * int(flat_cube[i]) for i in range(len(flat_cube))) % 1000000
+
         return f"{hash_val:06d}"
     
     def _optimize_moves(self, moves: str) -> str:
@@ -683,7 +728,29 @@ def main():
     if cube.is_solved():
         print("Cube is already solved!")
         return
-    
+
+    def add_test_option_to_main():
+        """Add this code snippet to your main() function after the cube is created"""
+        
+        # ... existing code ...
+        
+        # Add test moves option
+        test_choice = input("Do you want to test some moves first? (y/n): ").lower()
+        if test_choice == 'y':
+            while True:
+                test_moves_input = input("Enter moves to test (or 'done' to continue): ")
+                if test_moves_input.lower() == 'done':
+                    break
+                cube.test_moves(test_moves_input)
+                
+                # Ask if they want to keep the current state or reset
+                keep_choice = input("Keep current state? (y/n): ").lower()
+                if keep_choice == 'n':
+                    if choice == 's':
+                        cube = RubiksCube()
+                        cube.apply_moves(scramble)
+                    else:
+                        cube = input_cube()
     # Solve the cube
     solver = ThistlethwaiteSolver()
     start_time = time.time()
