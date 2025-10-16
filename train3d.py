@@ -4,7 +4,7 @@ import numpy as np     # This helps us do math with numbers and arrays
 import configs         # This has our settings like window size and colors
 from rubik import Rubik  # This is our 3D Rubik's cube
 from cv_solver import RubikCVSolver # This helps solve the cube using a camera
-
+import queue
 # Create a window where we can see our cube (like opening a video game)
 pr.init_window(configs.window_w, configs.window_h, "Rubik's Cube CV Solver")
 rubik_cube = Rubik()  # Make a new Rubik's cube
@@ -24,10 +24,12 @@ pr.set_target_fps(configs.fps)
 try:
     cv_solver.initialize_camera()  # Turn on the camera
     camera_available = True        # Remember that camera works
-    print("Camera initialized successfully")  # Tell us it worked
+    print("Camera initialized successfully.")  # Tell us it worked
 except Exception as e:  # If something goes wrong with the camera
     camera_available = False  # Remember that camera doesn't work
-    print(f"Camera not available: {e}")  # Tell us what went wrong
+    print(f"Camera not available: {e}. Please ensure no other applications are using the camera and it's properly installed.")  # Tell us what went wrong
+
+print(f"Camera available status: {camera_available}")
 
 # Show a loading screen while everything starts up
 pr.begin_drawing()  # Start drawing on the screen
@@ -42,15 +44,31 @@ while not pr.window_should_close():  # Keep going until user clicks X
     # Check if the user is holding down the shift key (for backwards moves)
     shift_held = pr.is_key_down(pr.KEY_LEFT_SHIFT) or pr.is_key_down(pr.KEY_RIGHT_SHIFT)
     
-    # Listen for keyboard buttons being pressed (like controls in a video game)
+    # Check for solver completion
+    if cv_solver.is_solving:
+        try:
+            solution = cv_solver.solution_queue.get_nowait()
+            if solution:
+                cv_solver.solution_moves = [(m, f"Move {m}") for m in solution]
+                solution_ready = True
+                print("Solver finished. Press SPACE to step or A to auto-solve.")
+            else:
+                print("Solver failed to find a solution.")
+            cv_solver.is_solving = False
+        except queue.Empty:
+            # Solver is still running
+            pass
 
-    # Manual controls - these let you turn the cube by hand using keyboard
-    if pr.is_key_pressed(pr.KEY_F):  # F key = Front face
-        axis = np.array([0, 0, 1])  # Direction to rotate (front-back)
-        rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
-    elif pr.is_key_pressed(pr.KEY_R):  # F key = Front face
-        axis = np.array([1, 0, 0]) 
-        rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
+    # Listen for keyboard buttons being pressed (like controls in a video game)
+    if not cv_solver.is_solving:
+        # Manual controls - these let you turn the cube by hand using keyboard
+        if pr.is_key_pressed(pr.KEY_F):  # F key = Front face
+            axis = np.array([0, 0, 1])  # Direction to rotate (front-back)
+            rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
+        elif pr.is_key_pressed(pr.KEY_R):  # R key = Right face
+            axis = np.array([1, 0, 0]) 
+            rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, 2, not shift_held)
+        # ... (rest of the manual controls)
 
     elif pr.is_key_pressed(pr.KEY_U):  # U key = Up face
         axis = np.array([0, 1, 0])  # Direction to rotate (up-down)
@@ -77,6 +95,7 @@ while not pr.window_should_close():  # Keep going until user clicks X
 
     # Computer Vision Solver Controls (using camera to solve automatically)
     elif pr.is_key_pressed(pr.KEY_C) and camera_available:  # C key = Capture with camera
+        print("'C' key pressed. Attempting to capture cube state...")
         # Take pictures of the cube to see what colors are where
         print("Starting cube capture...")  # Tell user what's happening
         solver_mode = True  # Switch to camera solver mode
@@ -108,23 +127,26 @@ while not pr.window_should_close():  # Keep going until user clicks X
     
     elif pr.is_key_pressed(pr.KEY_S) and solver_mode and capture_completed:
         try:
-            if cv_solver.solve_cube():
+            print("Solving using Legacy Algorithm...")
+            if cv_solver.solve_cube(use_legacy=True):
                 solution_ready = True
-                print("Solution generated! Press SPACE to step through moves or A for auto-solve.")
+                print("Legacy solution ready. Press SPACE or A to animate.")
             else:
-                print("Failed to generate solution")
+                print("Legacy solver failed.")
         except Exception as e:
-            print(f"Error generating solution: {e}")
+            print(f"Legacy solver error: {e}")
+
 
     
     elif pr.is_key_pressed(pr.KEY_SPACE) and solution_ready:
         if not rubik_cube.is_rotating:
             move_data = cv_solver.get_current_move()
-            if move_data and move_data[0]:
+            if move_data is not None and move_data[0]:
                 move = move_data[0]
                 game_moves = cv_solver.map_move_to_game_input(move)
                 for axis, level, clockwise in game_moves:
                     rotation_queue = rubik_cube.add_rotation(rotation_queue, axis, level, clockwise)
+
                 if not cv_solver.next_step():
                     print("Solution complete!")
                     solution_ready = False
@@ -142,7 +164,7 @@ while not pr.window_should_close():  # Keep going until user clicks X
     # Auto-solve functionality (computer automatically does moves)
     if auto_solve and solution_ready and not rubik_cube.is_rotating:
         move_data = cv_solver.get_current_move()
-        if move_data and move_data[0]:
+        if move_data is not None and move_data[0]:
             move = move_data[0]
             game_moves = cv_solver.map_move_to_game_input(move)
             for axis, level, clockwise in game_moves:
@@ -249,7 +271,7 @@ while not pr.window_should_close():  # Keep going until user clicks X
         if solution_ready:  # If we have a solution ready to use
             # Show current move and progress
             current_move = cv_solver.get_current_move()  # Get what move comes next
-            if current_move[0]:  # If there is a next move
+            if current_move is not None and current_move[0]:  # If there is a next move
                 move_text = f"Next: {current_move[0]} - {current_move[1]}".encode()  # Create text showing next move
                 pr.draw_text(move_text, 10, y_offset, 14, pr.DARKBLUE)  # Show the next move
                 y_offset += 20  # Move down for next line

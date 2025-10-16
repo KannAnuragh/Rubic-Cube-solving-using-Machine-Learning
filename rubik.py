@@ -416,3 +416,161 @@ class Rubik:
         rotation_queue.append((angle, axis, level))
         # Return the updated to-do list
         return rotation_queue
+
+    def scramble(self, rotation_queue, num_moves=20):
+        """Scramble the cube with random moves"""
+        # Define all possible moves we can make
+        axes = [np.array([1, 0, 0]), np.array([0, 1, 0]), np.array([0, 0, 1])]
+        levels = [0, 2]  # Only rotate outer layers
+        directions = [True, False]  # Clockwise or counter-clockwise
+
+        # Make a bunch of random moves
+        for _ in range(num_moves):
+            # Pick a random axis, layer, and direction
+            axis = random.choice(axes)
+            level = random.choice(levels)
+            direction = random.choice(directions)
+            # Add this random move to our to-do list
+            rotation_queue = self.add_rotation(rotation_queue, axis, level, direction)
+        
+        # Return the updated to-do list
+        return rotation_queue
+
+    def solve(self, rotation_queue, solver_function, cube_state_string=""):
+        """Solve the cube using a provided solver function"""
+        # Get the list of moves from the solver
+        moves = solver_function(cube_state_string)
+        # Go through each move in the solution
+        for move in moves:
+            # Figure out which axis, layer, and direction to turn
+            axis, level, clockwise = self.map_move_to_rotation(move)
+            # Add this move to our to-do list
+            rotation_queue = self.add_rotation(rotation_queue, axis, level, clockwise)
+        # Return the updated to-do list
+        return rotation_queue
+
+    def map_move_to_rotation(self, move):
+        """Map a move string (e.g., 'F', "R'") to rotation parameters"""
+        # Check if the move is counter-clockwise
+        clockwise = not move.endswith("'")
+        # Get the main face letter (F, R, U, etc.)
+        face = move[0]
+
+        # Define which axis and layer each face corresponds to
+        move_map = {
+            'F': (np.array([0, 0, 1]), 2),  # Front face
+            'B': (np.array([0, 0, 1]), 0),  # Back face
+            'R': (np.array([1, 0, 0]), 2),  # Right face
+            'L': (np.array([1, 0, 0]), 0),  # Left face
+            'U': (np.array([0, 1, 0]), 2),  # Up face
+            'D': (np.array([0, 1, 0]), 0)   # Down face
+        }
+        # Get the axis and layer for this move
+        axis, level = move_map[face]
+        # Return the axis, layer, and direction
+        return axis, level, clockwise
+
+    def apply_solution_step(self, rotation_queue, move_info):
+        """Apply a single step from the solver's solution"""
+        # Get the move string (like "F" or "R'")
+        move_str = move_info[0]
+        # Figure out how to rotate the cube for this move
+        axis, level, clockwise = self.map_move_to_rotation(move_str)
+        # Add this rotation to our to-do list
+        rotation_queue = self.add_rotation(rotation_queue, axis, level, clockwise)
+        # Return the updated to-do list
+        return rotation_queue
+
+def main():
+    # Set up the window where we'll draw our cube
+    screen_width = 800
+    screen_height = 600
+    pr.init_window(screen_width, screen_height, "Rubik's Cube")
+    # Try to make the graphics look smooth
+    pr.set_config_flags(pr.FLAG_MSAA_4X_HINT)
+    # Set how fast our animation should run (frames per second)
+    pr.set_target_fps(60)
+
+    # Create our Rubik's cube
+    rubik = Rubik()
+    # Set up the camera so we can see the cube
+    camera = pr.Camera3D(
+        position=pr.Vector3(10, 10, 10),  # Where the camera is
+        target=pr.Vector3(0, 0, 0),      # What the camera is looking at
+        up=pr.Vector3(0, 1, 0),          # Which way is "up"
+        fovy=45.0,                       # How wide the camera's view is
+        projection=pr.CAMERA_PERSPECTIVE # Use a normal 3D view
+    )
+
+    # Create an empty list to hold our rotation instructions
+    rotation_queue = []
+
+    # Main loop (this runs over and over until we close the window)
+    while not pr.window_should_close():
+        # Update the camera's position if we move the mouse
+        pr.update_camera(camera, pr.CAMERA_ORBITAL)
+
+        # Handle rotations
+        # Check if we have any rotations to do and do them
+        rotation_queue, _ = rubik.handle_rotation(rotation_queue)
+
+        # Check for key presses to rotate the cube
+        # If we're not busy rotating, check if the user pressed a key
+        if not rubik.is_rotating:
+            # Define what each key does
+            key_map = {
+                pr.KEY_F: (np.array([0, 0, 1]), 2, True),   # F key: Front face, clockwise
+                pr.KEY_B: (np.array([0, 0, 1]), 0, True),   # B key: Back face, clockwise
+                pr.KEY_R: (np.array([1, 0, 0]), 2, True),   # R key: Right face, clockwise
+                pr.KEY_L: (np.array([1, 0, 0]), 0, True),   # L key: Left face, clockwise
+                pr.KEY_U: (np.array([0, 1, 0]), 2, True),   # U key: Up face, clockwise
+                pr.KEY_D: (np.array([0, 1, 0]), 0, True),   # D key: Down face, clockwise
+            }
+            
+            # Check if the user is holding the SHIFT key
+            is_shift_down = pr.is_key_down(pr.KEY_LEFT_SHIFT) or pr.is_key_down(pr.KEY_RIGHT_SHIFT)
+
+            # Go through all our key definitions
+            for key, (axis, level, clockwise) in key_map.items():
+                # If this key was just pressed
+                if pr.is_key_pressed(key):
+                    # If SHIFT is down, rotate counter-clockwise
+                    # Otherwise, rotate clockwise
+                    rotation_queue = rubik.add_rotation(rotation_queue, axis, level, not is_shift_down)
+            
+            # Check if the user wants to scramble the cube
+            if pr.is_key_pressed(pr.KEY_S):
+                # Add 20 random moves to our to-do list
+                rotation_queue = rubik.scramble(rotation_queue)
+
+            # Check if the user wants to solve the cube with Thistlethwaite
+            if pr.is_key_pressed(pr.KEY_T):
+                # Pass the solver function to the solve method
+                rotation_queue = rubik.solve(rotation_queue, thistlethwaite_solve)
+
+        # Start drawing on the screen
+        pr.begin_drawing()
+        # Clear the screen to a light gray color
+        pr.clear_background(pr.LIGHTGRAY)
+        # Start our 3D drawing mode
+        pr.begin_mode_3d(camera)
+        # Draw our Rubik's cube
+        rubik.draw()
+        # Draw a grid on the floor to help with perspective
+        pr.draw_grid(20, 1.0)
+        # Stop our 3D drawing mode
+        pr.end_mode_3d()
+        # Write some instructions on the screen
+        pr.draw_text("Use F, B, R, L, U, D to rotate faces", 10, 10, 20, pr.DARKGRAY)
+        pr.draw_text("Hold SHIFT for counter-clockwise", 10, 40, 20, pr.DARKGRAY)
+        pr.draw_text("Press S to scramble", 10, 70, 20, pr.DARKGRAY)
+        pr.draw_text("Press T to solve (Thistlethwaite)", 10, 100, 20, pr.DARKGRAY)
+        # Stop drawing on the screen
+        pr.end_drawing()
+
+    # Clean up and close the window when we're done
+    pr.close_window()
+
+# If we run this file directly, start the main function
+if __name__ == '__main__':
+    main()
