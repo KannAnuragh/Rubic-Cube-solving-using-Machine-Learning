@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 import threading
 import queue
-from legacy_solver import reset_cube, solve_white_cross, get_moves
 
 class RubikCVSolver:
     def __init__(self):
@@ -15,30 +14,31 @@ class RubikCVSolver:
         self.is_solving = False
         self.solution_queue = queue.Queue()
 
+        # HSV color ranges for OpenCV (H: 0-180, S: 0-255, V: 0-255)
         self.color_ranges = {
-            'white': ([0, 0, 180], [180, 60, 255]),
-            'yellow': ([21, 100, 100], [35, 255, 255]),
-            'red': ([0, 100, 100], [2, 200, 200]),
-            'orange': ([1, 50, 50], [15, 255, 255]),
-            'green': ([40, 50, 50], [80, 255, 255]),
-            'blue': ([50, 50, 50], [130, 255, 255])
+            'white': ([0, 0, 200], [180, 30, 255]),       # Low saturation, high value
+            'yellow': ([20, 100, 100], [30, 255, 255]),   # H: 20-30
+            'red': ([0, 100, 100], [10, 255, 255]),       # H: 0-10 (wraps at 170-180)
+            'orange': ([11, 100, 100], [19, 255, 255]),   # H: 11-19
+            'green': ([35, 100, 100], [77, 255, 255]),    # H: 35-77
+            'blue': ([100, 100, 100], [130, 255, 255])    # H: 100-130
         }
         self.face_names = ['F', 'B', 'R', 'L', 'U', 'D']
 
-    def _solve_worker(self, cube_state):
-        """Worker function to run in a separate thread."""
-        solution = None
-        try:
-            # Import, load tables, and solve all within the thread
-            from thistlethwaite_solver import get_solution
-            print("Solver thread started, finding solution...")
-            solution = get_solution(cube_state)
-        except Exception as e:
-            print(f"Solver thread error: {e}")
-            solution = None
+    # def _solve_worker(self, cube_state):
+    #     """Worker function to run in a separate thread."""
+    #     solution = None
+    #     try:
+    #         # Import, load tables, and solve all within the thread
+    #         from thistlethwaite_solver import get_solution
+    #         print("Solver thread started, finding solution...")
+    #         solution = get_solution(cube_state)
+    #     except Exception as e:
+    #         print(f"Solver thread error: {e}")
+    #         solution = None
         
-        self.solution_queue.put(solution)
-        self.is_solving = False
+    #     self.solution_queue.put(solution)
+    #     self.is_solving = False
 
     def solve_cube(self, use_thistlethwaite=False, use_legacy=False):
         if self.is_solving:
@@ -59,38 +59,38 @@ class RubikCVSolver:
             solver_thread.start()
             return True # Indicates that solving has started
 
-        elif use_legacy:
-            # Legacy solver is assumed to be fast, run synchronously
-            try:
-                from legacy_solver import (
-                    reset_cube, apply_moves_legacy, solve_white_cross_dynamic, solve_white_corners_dynamic,
-                    solve_middle_layer_edges_dynamic, solve_yellow_cross_dynamic,
-                    solve_yellow_corners_orientation_dynamic, solve_last_layer_permutation_dynamic,
-                    get_moves, is_cube_solved_legacy
-                )
-                reset_cube()
-                scramble = ["F", "R", "U", "R'", "F'", "U2", "L", "D", "L'", "U"]
-                apply_moves_legacy(scramble)
-                solve_white_cross_dynamic()
-                solve_white_corners_dynamic()
-                solve_middle_layer_edges_dynamic()
-                solve_yellow_cross_dynamic()
-                solve_yellow_corners_orientation_dynamic()
-                solve_last_layer_permutation_dynamic()
-                all_moves = get_moves()
-                if is_cube_solved_legacy():
-                    print("✓ Legacy solver finished successfully!")
-                    self.solution_moves = [(m, f"Move {m}") for m in all_moves]
-                    self.is_solving = False
-                    return True
-                else:
-                    print("✗ Legacy solver failed.")
-                    self.is_solving = False
-                    return False
-            except Exception as e:
-                print(f"Legacy solver error: {e}")
-                self.is_solving = False
-                return False
+        # elif use_legacy:
+        #     # Legacy solver is assumed to be fast, run synchronously
+        #     try:
+        #         from legacy_solver import (
+        #             reset_cube, apply_moves_legacy, solve_white_cross_dynamic, solve_white_corners_dynamic,
+        #             solve_middle_layer_edges_dynamic, solve_yellow_cross_dynamic,
+        #             solve_yellow_corners_orientation_dynamic, solve_last_layer_permutation_dynamic,
+        #             get_moves, is_cube_solved_legacy
+        #         )
+        #         reset_cube()
+        #         scramble = ["F", "R", "U", "R'", "F'", "U2", "L", "D", "L'", "U"]
+        #         apply_moves_legacy(scramble)
+        #         solve_white_cross_dynamic()
+        #         solve_white_corners_dynamic()
+        #         solve_middle_layer_edges_dynamic()
+        #         solve_yellow_cross_dynamic()
+        #         solve_yellow_corners_orientation_dynamic()
+        #         solve_last_layer_permutation_dynamic()
+        #         all_moves = get_moves()
+        #         if is_cube_solved_legacy():
+        #             print("✓ Legacy solver finished successfully!")
+        #             self.solution_moves = [(m, f"Move {m}") for m in all_moves]
+        #             self.is_solving = False
+        #             return True
+        #         else:
+        #             print("✗ Legacy solver failed.")
+        #             self.is_solving = False
+        #             return False
+        #     except Exception as e:
+        #         print(f"Legacy solver error: {e}")
+        #         self.is_solving = False
+        #         return False
         
         self.is_solving = False
         return False
@@ -173,6 +173,9 @@ class RubikCVSolver:
                 # Show a checkmark if captured, dash if not
                 cv2.putText(display_frame, f"{key}: {'Captured' if key in captured_faces else 'Not captured'}", 
                             (10, 100 + i * 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+
+            # Draw the 2D cube visualization on the right side
+            display_frame = self.draw_cube_visualization(display_frame, captured_faces)
 
             # Show the picture on screen
             cv2.imshow("Rubik Cube Capture", display_frame)
@@ -329,46 +332,157 @@ class RubikCVSolver:
         return colors
 
     def get_dominant_color(self, image_section):
-        """Determine the dominant color in an image section"""
-        # Convert the image from normal colors (BGR) to HSV (better for detecting colors)
+        """Robust dominant color detection with fallback HSV averaging"""
+        import cv2
+        import numpy as np
+
+        # Convert to HSV
         hsv = cv2.cvtColor(image_section, cv2.COLOR_BGR2HSV)
-        # Get the size of our image section
         h, w = hsv.shape[:2]
-        # Look at just the center part (ignore the edges)
+
+        # Center crop to reduce noise/reflections
         center = hsv[h // 3:2 * h // 3, w // 3:2 * w // 3]
-        # Count how many pixels we're looking at
+
+        if center.size == 0:
+            return 'unknown'
+
         total_pixels = center.shape[0] * center.shape[1]
 
-        # Start assuming we don't know what color this is
+        # HSV ranges for each color
+        color_ranges = {
+            'white':  ([0, 0, 140], [180, 80, 255]),
+            'yellow': ([18, 80, 120], [40, 255, 255]),
+            'orange': ([8, 120, 120], [25, 255, 255]),
+            'green':  ([40, 60, 60], [85, 255, 255]),
+            'blue':   ([90, 60, 60], [140, 255, 255]),
+        }
+
         best_match = 'unknown'
-        # Keep track of the best color match we've found
         max_ratio = 0
 
-        # Try each color in our color dictionary
-        for color, (lower, upper) in self.color_ranges.items():
-            # Convert the color ranges to the right format
+        # --- MASK-BASED DETECTION ---
+        for color, (lower, upper) in color_ranges.items():
             lower = np.array(lower)
             upper = np.array(upper)
 
-            # Red is special because it wraps around in the color wheel
-            if color == 'red':
-                # Look for red in two different ranges
-                mask1 = cv2.inRange(center, np.array([0, 120, 70]), np.array([10, 255, 255]))
-                mask2 = cv2.inRange(center, np.array([170, 120, 70]), np.array([180, 255, 255]))
-                # Combine both red ranges
-                mask = cv2.bitwise_or(mask1, mask2)
-            else:
-                # For other colors, just look in one range
-                mask = cv2.inRange(center, lower, upper)
+            mask = cv2.inRange(center, lower, upper)
+            match_ratio = cv2.countNonZero(mask) / total_pixels
 
-            # Count how many pixels match this color
-            match = cv2.countNonZero(mask) / total_pixels
-            # If this is the best match so far and it's good enough
-            if match > max_ratio and match > 0.3:
-                max_ratio = match
+            if match_ratio > max_ratio and match_ratio > 0.2:
+                max_ratio = match_ratio
                 best_match = color
-        # Return the color we think this is
-        return best_match
+
+        # --- SPECIAL RED HANDLING (wrap-around at 180°) ---
+        mask1 = cv2.inRange(center, np.array([0, 80, 80]), np.array([10, 255, 255]))
+        mask2 = cv2.inRange(center, np.array([170, 80, 80]), np.array([180, 255, 255]))
+        red_mask = cv2.bitwise_or(mask1, mask2)
+
+        red_ratio = cv2.countNonZero(red_mask) / total_pixels
+
+        if red_ratio > max_ratio and red_ratio > 0.2:
+            best_match = 'red'
+            max_ratio = red_ratio
+
+        # If confident mask match found, return it
+        if best_match != 'unknown':
+            return best_match
+
+        # ✅ FALLBACK: Average HSV classification (NOW ACTUALLY RUNS)
+        avg_h = np.mean(center[:, :, 0])
+        avg_s = np.mean(center[:, :, 1])
+        avg_v = np.mean(center[:, :, 2])
+
+        # White (low saturation, high brightness)
+        if avg_s < 50 and avg_v > 140:
+            return 'white'
+
+        # Yellow
+        if 18 < avg_h < 40:
+            return 'yellow'
+
+        # Orange
+        if 8 < avg_h < 25:
+            return 'orange'
+
+        # Red (wrap-around)
+        if avg_h < 10 or avg_h > 170:
+            return 'red'
+
+        # Green
+        if 40 < avg_h < 85:
+            return 'green'
+
+        # Blue
+        if 90 < avg_h < 140:
+            return 'blue'
+
+        # Ultimate fallback
+        return 'unknown'
+
+    def color_name_to_bgr(self, color_name):
+        """Convert color name to BGR tuple for OpenCV drawing"""
+        color_map = {
+            'white': (255, 255, 255),
+            'yellow': (0, 255, 255),
+            'red': (0, 0, 255),
+            'orange': (0, 165, 255),
+            'green': (0, 255, 0),
+            'blue': (255, 0, 0),
+            'unknown': (128, 128, 128)
+        }
+        return color_map.get(color_name, (128, 128, 128))
+
+    def draw_cube_visualization(self, frame, captured_faces):
+        """Draw a compact vertical 2D representation of captured cube faces on the right side"""
+        h, w = frame.shape[:2]
+        start_x = w - 110  # Position on far right side
+        start_y = 20
+        cell_size = 12    # Smaller cells
+        padding = 2       # Minimal padding
+        face_spacing = 62 # Vertical spacing between faces
+        
+        # Arrange all 6 faces vertically
+        face_order = ['F', 'R', 'B', 'L', 'U', 'D']
+        
+        # Draw each face vertically
+        for idx, face_name in enumerate(face_order):
+            base_x = start_x
+            base_y = start_y + idx * face_spacing
+            
+            # Draw face label (small font)
+            cv2.putText(frame, face_name, (base_x - 10, base_y + 4),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+            
+            # Draw 3x3 grid of stickers
+            if face_name in captured_faces:
+                colors = captured_faces[face_name]
+                for row_idx in range(3):
+                    for col_idx in range(3):
+                        x = base_x + col_idx * (cell_size + padding)
+                        y = base_y + row_idx * (cell_size + padding)
+                        
+                        if row_idx < len(colors) and col_idx < len(colors[row_idx]):
+                            color_name = colors[row_idx][col_idx]
+                            color_bgr = self.color_name_to_bgr(color_name)
+                        else:
+                            color_bgr = (128, 128, 128)
+                        
+                        # Draw colored square
+                        cv2.rectangle(frame, (x, y), (x + cell_size, y + cell_size),
+                                    color_bgr, -1)
+                        # Draw border
+                        cv2.rectangle(frame, (x, y), (x + cell_size, y + cell_size),
+                                    (100, 100, 100), 1)
+            else:
+                # Draw empty grid if face not captured
+                for row_idx in range(3):
+                    for col_idx in range(3):
+                        x = base_x + col_idx * (cell_size + padding)
+                        y = base_y + row_idx * (cell_size + padding)
+                        cv2.rectangle(frame, (x, y), (x + cell_size, y + cell_size),
+                                    (40, 40, 40), 1)
+        
+        return frame
 
     def initialize_solver_state(self):
         # Copy global variable definitions from 3D script here (like ufr, df, fr, etc.)
@@ -437,75 +551,75 @@ class RubikCVSolver:
             # Close all the windows we opened
             cv2.destroyAllWindows()
 
-    def test_dynamic_solver_with_scramble(self, scramble_moves=None):
-        """
-        Test the dynamic solver with a scrambled cube state.
-        Args:
-            scramble_moves: List of moves to scramble the cube (e.g., ["F", "R", "U", "R'", "F'"])
-        """
-        try:
-            from legacy_solver import (
-                reset_cube, apply_moves_legacy, solve_white_cross_dynamic, solve_white_corners_dynamic,
-                solve_middle_layer_edges_dynamic, solve_yellow_cross_dynamic,
-                solve_yellow_corners_orientation_dynamic, solve_last_layer_permutation_dynamic,
-                get_moves, is_cube_solved_legacy
-            )
+    # def test_dynamic_solver_with_scramble(self, scramble_moves=None):
+    #     """
+    #     Test the dynamic solver with a scrambled cube state.
+    #     Args:
+    #         scramble_moves: List of moves to scramble the cube (e.g., ["F", "R", "U", "R'", "F'"])
+    #     """
+    #     try:
+    #         from legacy_solver import (
+    #             reset_cube, apply_moves_legacy, solve_white_cross_dynamic, solve_white_corners_dynamic,
+    #             solve_middle_layer_edges_dynamic, solve_yellow_cross_dynamic,
+    #             solve_yellow_corners_orientation_dynamic, solve_last_layer_permutation_dynamic,
+    #             get_moves, is_cube_solved_legacy
+    #         )
 
-            # Reset cube
-            reset_cube()
+    #         # Reset cube
+    #         reset_cube()
             
-            # Apply scramble if provided
-            if scramble_moves:
-                print(f"Applying scramble: {' '.join(scramble_moves)}")
-                apply_moves_legacy(scramble_moves)
+    #         # Apply scramble if provided
+    #         if scramble_moves:
+    #             print(f"Applying scramble: {' '.join(scramble_moves)}")
+    #             apply_moves_legacy(scramble_moves)
             
-            # Run the complete dynamic solver
-            print("Running complete dynamic solver...")
+    #         # Run the complete dynamic solver
+    #         print("Running complete dynamic solver...")
             
-            # Stage 1: White Cross
-            print("Stage 1: White Cross")
-            moves1 = solve_white_cross_dynamic()
+    #         # Stage 1: White Cross
+    #         print("Stage 1: White Cross")
+    #         moves1 = solve_white_cross_dynamic()
             
-            # Stage 2: White Corners
-            print("Stage 2: White Corners")
-            moves2 = solve_white_corners_dynamic()
+    #         # Stage 2: White Corners
+    #         print("Stage 2: White Corners")
+    #         moves2 = solve_white_corners_dynamic()
             
-            # Stage 3: Middle Layer Edges
-            print("Stage 3: Middle Layer Edges")
-            moves3 = solve_middle_layer_edges_dynamic()
+    #         # Stage 3: Middle Layer Edges
+    #         print("Stage 3: Middle Layer Edges")
+    #         moves3 = solve_middle_layer_edges_dynamic()
             
-            # Stage 4: Yellow Cross
-            print("Stage 4: Yellow Cross")
-            moves4 = solve_yellow_cross_dynamic()
+    #         # Stage 4: Yellow Cross
+    #         print("Stage 4: Yellow Cross")
+    #         moves4 = solve_yellow_cross_dynamic()
             
-            # Stage 5: Yellow Corners Orientation
-            print("Stage 5: Yellow Corners Orientation")
-            moves5 = solve_yellow_corners_orientation_dynamic()
+    #         # Stage 5: Yellow Corners Orientation
+    #         print("Stage 5: Yellow Corners Orientation")
+    #         moves5 = solve_yellow_corners_orientation_dynamic()
             
-            # Stage 6: Last Layer Permutation
-            print("Stage 6: Last Layer Permutation")
-            moves6 = solve_last_layer_permutation_dynamic()
+    #         # Stage 6: Last Layer Permutation
+    #         print("Stage 6: Last Layer Permutation")
+    #         moves6 = solve_last_layer_permutation_dynamic()
             
-            # Get all moves
-            all_moves = get_moves()
-            print(f"Complete solution: {len(all_moves)} moves")
-            print("Moves:", all_moves)
+    #         # Get all moves
+    #         all_moves = get_moves()
+    #         print(f"Complete solution: {len(all_moves)} moves")
+    #         print("Moves:", all_moves)
             
-            # Check if cube is solved
-            if is_cube_solved_legacy():
-                print("✓ Cube solved successfully!")
-            else:
-                print("✗ Cube not solved - solver may need improvement")
+    #         # Check if cube is solved
+    #         if is_cube_solved_legacy():
+    #             print("✓ Cube solved successfully!")
+    #         else:
+    #             print("✗ Cube not solved - solver may need improvement")
 
-            # Convert to the format expected by the 3D interface
-            self.solution_moves = [(m, f"Move {m}") for m in all_moves]
-            self.current_step = 0
-            self.is_solved = False
-            return True
+    #         # Convert to the format expected by the 3D interface
+    #         self.solution_moves = [(m, f"Move {m}") for m in all_moves]
+    #         self.current_step = 0
+    #         self.is_solved = False
+    #         return True
 
-        except Exception as e:
-            print(f"Dynamic solver error: {e}")
-            return False
+    #     except Exception as e:
+    #         print(f"Dynamic solver error: {e}")
+    #         return False
 
 def solve_white_cross(cube):
     """

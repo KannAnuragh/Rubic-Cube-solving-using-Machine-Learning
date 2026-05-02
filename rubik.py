@@ -199,15 +199,15 @@ class Rubik:
                         if face == 'F':
                             color_name = facelets[2 - row][col]           # Flip vertically
                         elif face == 'B':
-                            color_name = facelets[2 - row][col]       # Flip vertically + horizontally
+                            color_name = facelets[2 - row][col]           # Flip vertically + horizontally
                         elif face == 'L':
-                            color_name = facelets[2 - row][col]       # Flip vertically + horizontally
+                            color_name = facelets[2 - row][col]           # Flip vertically + horizontally
                         elif face == 'R':
                             color_name = facelets[2 - row][col]           # Flip vertically
                         elif face == 'U':
                             color_name = facelets[row][2 - col]           # Mirror horizontally only
                         elif face == 'D':
-                            color_name = facelets[2 - row][col]           # Flip vertically
+                            color_name = facelets[row][2 - col]           # Flip vertically
 
 
                         color = self.color_lookup.get(color_name, pr.GRAY)
@@ -544,9 +544,9 @@ def main():
                 rotation_queue = rubik.scramble(rotation_queue)
 
             # Check if the user wants to solve the cube with Thistlethwaite
-            if pr.is_key_pressed(pr.KEY_T):
-                # Pass the solver function to the solve method
-                rotation_queue = rubik.solve(rotation_queue, thistlethwaite_solve)
+            # if pr.is_key_pressed(pr.KEY_T):
+            #     # Pass the solver function to the solve method
+            #     rotation_queue = rubik.solve(rotation_queue, thistlethwaite_solve)
 
         # Start drawing on the screen
         pr.begin_drawing()
